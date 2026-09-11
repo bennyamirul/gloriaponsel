@@ -16,6 +16,8 @@ import {
   Tag,
   Truck,
   UserCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,85 +28,254 @@ interface NavItem {
   superAdminOnly?: boolean;
 }
 
-const mainNavItems: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Produk", href: "/products", icon: Package },
-  { label: "Transaksi", href: "/sales", icon: ShoppingCart },
-  { label: "Manajemen Stok", href: "/stock", icon: Boxes },
-  { label: "Laporan", href: "/reports", icon: BarChart3 },
-  { label: "Kategori", href: "/categories", icon: Layers },
-  { label: "Brand", href: "/brands", icon: Tag },
-  { label: "Supplier", href: "/suppliers", icon: Truck },
-  { label: "Pelanggan", href: "/customers", icon: UserCheck },
-  { label: "Manajemen User", href: "/users", icon: Users, superAdminOnly: true },
-  { label: "Pengaturan", href: "/settings", icon: Settings, superAdminOnly: true },
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
+  {
+    title: "Operasional",
+    items: [
+      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { label: "Kasir POS", href: "/sales", icon: ShoppingCart },
+      { label: "Manajemen Stok", href: "/stock", icon: Boxes },
+      { label: "Laporan", href: "/reports", icon: BarChart3 },
+    ],
+  },
+  {
+    title: "Master Data",
+    items: [
+      { label: "Produk", href: "/products", icon: Package },
+      { label: "Kategori", href: "/categories", icon: Layers },
+      { label: "Brand", href: "/brands", icon: Tag },
+      { label: "Supplier", href: "/suppliers", icon: Truck },
+      { label: "Pelanggan", href: "/customers", icon: UserCheck },
+    ],
+  },
+  {
+    title: "Administrasi",
+    items: [
+      { label: "Manajemen User", href: "/users", icon: Users, superAdminOnly: true },
+      { label: "Pengaturan Toko", href: "/settings", icon: Settings, superAdminOnly: true },
+    ],
+  },
 ];
 
-export function Sidebar({ userRole = "super_admin" }: { userRole?: string }) {
+interface SidebarProps {
+  userRole?: string;
+  userName?: string;
+  isExpanded?: boolean;
+  onToggle?: () => void;
+}
+
+export function Sidebar({
+  userRole = "super_admin",
+  userName = "Owner Toko",
+  isExpanded = true,
+  onToggle,
+}: SidebarProps) {
   const pathname = usePathname();
 
-  const filteredItems = mainNavItems.filter(
-    (item) => !item.superAdminOnly || userRole === "super_admin"
-  );
+  const handleLogout = async () => {
+    const { logoutAction } = await import("@/lib/actions/auth.actions");
+    await logoutAction();
+  };
 
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  };
+
+  // Filter sections and items based on role
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.superAdminOnly || userRole === "super_admin"
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  // EXPANDED SIDEBAR (w-64)
+  if (isExpanded) {
+    return (
+      <aside className="fixed inset-y-0 left-0 z-40 hidden md:flex w-64 flex-col justify-between border-r border-slate-800 bg-[#111827] transition-all duration-300 ease-in-out shadow-xl">
+        {/* Header: Logo + Store Name + Collapse Button */}
+        <div className="flex h-16 items-center justify-between px-4 border-b border-slate-800/80">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-3 group transition"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/30 group-hover:bg-indigo-500 transition">
+              <Smartphone className="h-5 w-5" />
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-sm font-bold tracking-tight text-white leading-none">
+                Toko Handphone
+              </span>
+              <span className="text-[11px] font-medium text-slate-400 mt-1">
+                Admin Dashboard
+              </span>
+            </div>
+          </Link>
+
+          {onToggle && (
+            <button
+              onClick={onToggle}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title="Kecilkan Sidebar"
+              aria-label="Kecilkan Sidebar"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Scrollable Navigation Items */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 no-scrollbar">
+          {visibleSections.map((section) => (
+            <div key={section.title} className="space-y-1">
+              <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                {section.title}
+              </p>
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== "/dashboard" && pathname.startsWith(item.href));
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150",
+                      isActive
+                        ? "bg-indigo-600 text-white font-semibold shadow-sm"
+                        : "text-slate-400 hover:text-white hover:bg-slate-800/70"
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-4 w-4 shrink-0 transition-colors",
+                        isActive ? "text-white" : "text-slate-400"
+                      )}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer: User Profile Card & Logout */}
+        <div className="p-3 border-t border-slate-800/80 bg-slate-900/40">
+          <div className="flex items-center justify-between p-2 rounded-xl bg-slate-800/60 border border-slate-700/50">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-xs font-bold text-white">
+                {getInitials(userName)}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-semibold text-slate-200 truncate leading-tight">
+                  {userName}
+                </span>
+                <span className="text-[10px] capitalize text-slate-400 truncate">
+                  {userRole.replace("_", " ")}
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:text-rose-300 hover:bg-rose-950/40 transition"
+              title="Keluar Akun"
+              aria-label="Keluar Akun"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
+  // COLLAPSED SIDEBAR (w-20)
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden md:flex w-20 flex-col items-center justify-between border-r border-slate-800 bg-[var(--sidebar-bg)] py-6 shadow-xl">
-      {/* Brand Logo */}
-      <div className="flex flex-col items-center gap-1">
+    <aside className="fixed inset-y-0 left-0 z-40 hidden md:flex w-20 flex-col items-center justify-between border-r border-slate-800 bg-[#111827] py-4 transition-all duration-300 ease-in-out shadow-xl">
+      {/* Brand Logo & Expand Button */}
+      <div className="flex flex-col items-center gap-2">
         <Link
           href="/dashboard"
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500"
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/30 transition hover:bg-indigo-500"
           title="Toko Handphone"
         >
-          <Smartphone className="h-6 w-6" />
+          <Smartphone className="h-5 w-5" />
         </Link>
-        <span className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase mt-1">
-          Admin
-        </span>
+
+        {onToggle && (
+          <button
+            onClick={onToggle}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            title="Buka Sidebar"
+            aria-label="Buka Sidebar"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
-      {/* Navigation Icons (Scrollable if many items) */}
-      <nav className="flex flex-1 flex-col items-center gap-2 py-6 overflow-y-auto no-scrollbar">
-        {filteredItems.map((item) => {
-          const Icon = item.icon;
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+      {/* Navigation Icons (Scrollable) */}
+      <nav className="flex flex-1 flex-col items-center gap-1.5 py-4 overflow-y-auto no-scrollbar">
+        {visibleSections.flatMap((section) =>
+          section.items.map((item) => {
+            const Icon = item.icon;
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "group relative flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 transition-all duration-200 hover:bg-slate-800 hover:text-white",
-                isActive &&
-                  "bg-indigo-600/20 text-indigo-400 ring-1 ring-indigo-500/40"
-              )}
-              title={item.label}
-            >
-              <Icon className={cn("h-5 w-5 transition-transform group-hover:scale-110", isActive && "text-indigo-400")} />
-              
-              {/* Tooltip on hover */}
-              <div className="absolute left-16 z-50 hidden rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white shadow-md group-hover:block whitespace-nowrap border border-slate-800 pointer-events-none">
-                {item.label}
-              </div>
-            </Link>
-          );
-        })}
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "group relative flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-all duration-150 hover:bg-slate-800 hover:text-white",
+                  isActive &&
+                    "bg-indigo-600/25 text-indigo-400 ring-1 ring-indigo-500/40 font-semibold"
+                )}
+                title={item.label}
+              >
+                <Icon
+                  className={cn(
+                    "h-4.5 w-4.5 transition-transform group-hover:scale-110",
+                    isActive && "text-indigo-400"
+                  )}
+                />
+
+                {/* Tooltip on hover */}
+                <div className="absolute left-14 z-50 hidden rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white shadow-md group-hover:block whitespace-nowrap border border-slate-800 pointer-events-none">
+                  {item.label}
+                </div>
+              </Link>
+            );
+          })
+        )}
       </nav>
 
       {/* Bottom Action: Logout */}
       <div className="flex flex-col items-center pt-2">
         <button
-          onClick={async () => {
-            const { logoutAction } = await import("@/lib/actions/auth.actions");
-            await logoutAction();
-          }}
-          className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 hover:bg-rose-950/40 hover:text-rose-400 transition-all"
+          onClick={handleLogout}
+          className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-rose-950/40 hover:text-rose-400 transition-all"
           title="Keluar"
         >
-          <LogOut className="h-5 w-5" />
-          <div className="absolute left-16 z-50 hidden rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-rose-300 shadow-md group-hover:block whitespace-nowrap border border-slate-800 pointer-events-none">
+          <LogOut className="h-4.5 w-4.5" />
+          <div className="absolute left-14 z-50 hidden rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-rose-300 shadow-md group-hover:block whitespace-nowrap border border-slate-800 pointer-events-none">
             Keluar
           </div>
         </button>

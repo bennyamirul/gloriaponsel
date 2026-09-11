@@ -480,9 +480,9 @@ export function StockClient({
             <div className="space-y-4">
               {/* Product Stock Summary */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Card className="p-4 bg-[var(--info-bg)]/40 border-0 shadow-sm">
-                  <span className="text-xs font-semibold text-slate-700">Nama Produk</span>
-                  <p className="font-extrabold text-foreground text-sm mt-1">
+                <Card className="p-4 bg-card border border-border shadow-xs rounded-xl">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Nama Produk</span>
+                  <p className="font-bold text-foreground text-sm mt-1">
                     {stockCardData.product.name}
                   </p>
                   <span className="text-[11px] text-muted-foreground">
@@ -490,17 +490,17 @@ export function StockClient({
                   </span>
                 </Card>
 
-                <Card className="p-4 bg-[var(--success-bg)]/40 border-0 shadow-sm">
-                  <span className="text-xs font-semibold text-slate-700">Stok Fisik Saat Ini</span>
-                  <p className="text-2xl font-extrabold text-emerald-800 mt-1">
-                    {stockCardData.product.currentStock} Unit
+                <Card className="p-4 bg-card border border-border shadow-xs rounded-xl">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Stok Fisik Saat Ini</span>
+                  <p className="text-2xl font-bold text-foreground mt-1">
+                    {stockCardData.product.currentStock} <span className="text-sm font-normal text-muted-foreground">Unit</span>
                   </p>
                 </Card>
 
-                <Card className="p-4 bg-[var(--warning-bg)]/40 border-0 shadow-sm">
-                  <span className="text-xs font-semibold text-slate-700">Ambang Batas Minimum</span>
-                  <p className="text-2xl font-extrabold text-amber-800 mt-1">
-                    {stockCardData.product.minStock} Unit
+                <Card className="p-4 bg-card border border-border shadow-xs rounded-xl">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ambang Batas Minimum</span>
+                  <p className="text-2xl font-bold text-foreground mt-1">
+                    {stockCardData.product.minStock} <span className="text-sm font-normal text-muted-foreground">Unit</span>
                   </p>
                 </Card>
               </div>

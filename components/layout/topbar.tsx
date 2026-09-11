@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Bell, Smartphone } from "lucide-react";
+import { Search, Bell, Smartphone, PanelLeft } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -18,12 +18,16 @@ interface TopbarProps {
   title?: string;
   userName?: string;
   userRole?: string;
+  isSidebarExpanded?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export function Topbar({
   title = "Dashboard",
   userName = "Owner Toko",
   userRole = "super_admin",
+  isSidebarExpanded = true,
+  onToggleSidebar,
 }: TopbarProps) {
   const [isSearchOpenMobile, setIsSearchOpenMobile] = useState(false);
 
@@ -44,8 +48,20 @@ export function Topbar({
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-border bg-card/80 px-4 md:px-8 backdrop-blur-md transition-all">
-      {/* Left: Mobile Brand & Page Title */}
-      <div className="flex items-center gap-3">
+      {/* Left: Desktop Toggle, Mobile Brand & Page Title */}
+      <div className="flex items-center gap-2.5">
+        {onToggleSidebar && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            className="hidden md:flex h-9 w-9 text-muted-foreground hover:text-foreground"
+            title={isSidebarExpanded ? "Kecilkan Sidebar" : "Buka Sidebar"}
+            aria-label="Toggle Sidebar"
+          >
+            <PanelLeft className="h-4.5 w-4.5" />
+          </Button>
+        )}
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm md:hidden">
           <Smartphone className="h-5 w-5" />
         </div>

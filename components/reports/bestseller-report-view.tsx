@@ -2,16 +2,13 @@
 
 import { useState } from "react";
 import { formatRupiah } from "@/lib/utils";
-import { exportToCSV, triggerPrint } from "@/lib/export-utils";
+import { exportToExcel, triggerPrint } from "@/lib/export-utils";
 import {
   Trophy,
   Package,
   DollarSign,
-  TrendingUp,
-  Download,
   Printer,
-  Medal,
-  Flame,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,7 +50,7 @@ export function BestSellerReportView({
 }: BestSellerReportViewProps) {
   const { isSuperAdmin, grandTotalQty, grandTotalRevenue, startDate, endDate, items } = data;
 
-  const handleExportCSV = () => {
+  const handleExportExcel = () => {
     const headers = isSuperAdmin
       ? [
           "Peringkat",
@@ -64,8 +61,8 @@ export function BestSellerReportView({
           "Brand",
           "Unit Terjual",
           "Kontribusi (%)",
-          "Total Omzet",
-          "Laba Kotor",
+          "Total Omzet (Rp)",
+          "Laba Kotor (Rp)",
           "Margin (%)",
         ]
       : [
@@ -77,7 +74,7 @@ export function BestSellerReportView({
           "Brand",
           "Unit Terjual",
           "Kontribusi (%)",
-          "Total Omzet",
+          "Total Omzet (Rp)",
         ];
 
     const rows = items.map((it) => {
@@ -101,7 +98,7 @@ export function BestSellerReportView({
     });
 
     const dateStr = new Date().toISOString().slice(0, 10);
-    exportToCSV(`Laporan_Produk_Terlaris_${dateStr}.csv`, headers, rows);
+    exportToExcel(`Laporan_Produk_Terlaris_${dateStr}.xlsx`, "Produk Terlaris", headers, rows);
   };
 
   return (
@@ -109,13 +106,7 @@ export function BestSellerReportView({
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-lg font-bold text-foreground">Peringkat Produk Terlaris (Best Sellers)</h3>
-            <Badge className="bg-amber-100 text-amber-900 border-amber-200 text-[10px]">
-              <Flame className="h-3 w-3 mr-1 text-amber-600 fill-amber-600" />
-              Top Performance
-            </Badge>
-          </div>
+          <h3 className="text-base font-bold text-foreground">Peringkat Produk Terlaris</h3>
           <p className="text-xs text-muted-foreground">
             Periode: {new Date(startDate).toLocaleDateString("id-ID")} -{" "}
             {new Date(endDate).toLocaleDateString("id-ID")}
@@ -126,69 +117,75 @@ export function BestSellerReportView({
             variant="outline"
             size="sm"
             onClick={triggerPrint}
-            className="text-xs font-semibold"
+            className="text-xs font-medium border-border"
           >
-            <Printer className="mr-1.5 h-3.5 w-3.5" />
+            <Printer className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
             Cetak PDF
           </Button>
           <Button
             size="sm"
-            onClick={handleExportCSV}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+            onClick={handleExportExcel}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs"
           >
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            Ekspor Excel (CSV)
+            <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
+            Unduh Excel (.xlsx)
           </Button>
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Clean Minimalist KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card className="border-0 shadow-sm bg-[var(--info-bg)]/60">
+        <Card className="border border-border bg-card shadow-xs">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Total Unit Terjual</span>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600/15 text-blue-700">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Total Unit Terjual
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                 <Package className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-3">
-              <h4 className="text-xl font-extrabold text-slate-900">{grandTotalQty} Unit</h4>
-              <p className="text-[11px] text-slate-600 mt-1">Akumulasi seluruh produk</p>
+              <h4 className="text-2xl font-bold tracking-tight text-foreground">{grandTotalQty} Unit</h4>
+              <p className="text-xs text-muted-foreground mt-1">Akumulasi seluruh produk laku</p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-sm bg-[var(--success-bg)]/60">
+        <Card className="border border-border bg-card shadow-xs">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Total Omzet Terkumpul</span>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600/15 text-emerald-700">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Total Omzet Terkumpul
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                 <DollarSign className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-3">
-              <h4 className="text-xl font-extrabold text-slate-900">
+              <h4 className="text-2xl font-bold tracking-tight text-foreground">
                 {formatRupiah(grandTotalRevenue)}
               </h4>
-              <p className="text-[11px] text-slate-600 mt-1">Dari transaksi sukses</p>
+              <p className="text-xs text-muted-foreground mt-1">Dari transaksi sukses</p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-sm bg-[var(--purple-bg)]/60">
+        <Card className="border border-border bg-card shadow-xs">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Juara Penjualan (#1)</span>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600/15 text-purple-700">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Juara Penjualan (#1)
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
                 <Trophy className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-3">
-              <h4 className="text-sm font-extrabold text-slate-900 line-clamp-1">
+              <h4 className="text-base font-bold text-foreground line-clamp-1">
                 {items[0]?.name || "-"}
               </h4>
-              <p className="text-[11px] text-purple-800 font-semibold mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {items[0] ? `${items[0].qty} unit (${formatRupiah(items[0].revenue)})` : "Belum ada penjualan"}
               </p>
             </div>
@@ -197,15 +194,15 @@ export function BestSellerReportView({
       </div>
 
       {/* Filter Toggle Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-border">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-700">Urutkan:</span>
-          <div className="flex rounded-xl bg-slate-100 p-1">
+          <span className="text-xs font-semibold text-muted-foreground">Urutkan:</span>
+          <div className="flex rounded-lg bg-muted/60 p-0.5">
             <button
               onClick={() => onFilterChange("qty", currentLimit)}
-              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+              className={`px-3 py-1 text-xs font-medium rounded-md transition ${
                 currentSortBy === "qty"
-                  ? "bg-white text-indigo-700 shadow-sm"
+                  ? "bg-white text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -213,9 +210,9 @@ export function BestSellerReportView({
             </button>
             <button
               onClick={() => onFilterChange("revenue", currentLimit)}
-              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+              className={`px-3 py-1 text-xs font-medium rounded-md transition ${
                 currentSortBy === "revenue"
-                  ? "bg-white text-indigo-700 shadow-sm"
+                  ? "bg-white text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -225,15 +222,15 @@ export function BestSellerReportView({
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-700">Tampilkan:</span>
-          <div className="flex rounded-xl bg-slate-100 p-1">
+          <span className="text-xs font-semibold text-muted-foreground">Tampilkan:</span>
+          <div className="flex rounded-lg bg-muted/60 p-0.5">
             {[10, 20, 50].map((lim) => (
               <button
                 key={lim}
                 onClick={() => onFilterChange(currentSortBy, lim)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition ${
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition ${
                   currentLimit === lim
-                    ? "bg-white text-indigo-700 shadow-sm"
+                    ? "bg-white text-foreground shadow-xs font-semibold"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -245,7 +242,7 @@ export function BestSellerReportView({
       </div>
 
       {/* Ranking List Table */}
-      <Card className="shadow-sm border border-border">
+      <Card className="border border-border bg-card shadow-xs">
         <CardContent className="p-5">
           {items.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground text-xs">
@@ -257,7 +254,7 @@ export function BestSellerReportView({
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b text-muted-foreground font-semibold">
+                    <tr className="border-b border-border text-muted-foreground font-semibold">
                       <th className="pb-3 text-center w-12">Rank</th>
                       <th className="pb-3">Produk</th>
                       <th className="pb-3">Kategori & Brand</th>
@@ -274,12 +271,12 @@ export function BestSellerReportView({
                   </thead>
                   <tbody className="divide-y divide-border">
                     {items.map((it) => (
-                      <tr key={it.productId} className="hover:bg-muted/30 transition-colors">
+                      <tr key={it.productId} className="hover:bg-muted/40 transition-colors">
                         <td className="py-3 text-center">
                           <span
-                            className={`inline-flex h-7 w-7 items-center justify-center rounded-xl font-bold text-xs ${
+                            className={`inline-flex h-6 w-6 items-center justify-center rounded-md font-bold text-xs ${
                               it.rank === 1
-                                ? "bg-amber-100 text-amber-900 ring-1 ring-amber-300"
+                                ? "bg-amber-100 text-amber-900"
                                 : it.rank === 2
                                 ? "bg-slate-200 text-slate-800"
                                 : it.rank === 3
@@ -299,14 +296,14 @@ export function BestSellerReportView({
                         <td className="py-3 text-muted-foreground">
                           {it.categoryName} • {it.brandName}
                         </td>
-                        <td className="py-3 text-center font-bold text-foreground text-sm">
+                        <td className="py-3 text-center font-bold text-foreground">
                           {it.qty}
                         </td>
                         <td className="py-3">
                           <div className="space-y-1">
                             <div className="flex justify-between text-[11px]">
                               <span className="text-muted-foreground">Porsi:</span>
-                              <span className="font-bold text-foreground">
+                              <span className="font-medium text-foreground">
                                 {it.sharePercentage}%
                               </span>
                             </div>
@@ -318,16 +315,16 @@ export function BestSellerReportView({
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 text-right font-extrabold text-slate-900">
+                        <td className="py-3 text-right font-bold text-foreground">
                           {formatRupiah(it.revenue)}
                         </td>
                         {isSuperAdmin && (
                           <>
-                            <td className="py-3 text-right font-bold text-emerald-800">
+                            <td className="py-3 text-right font-bold text-emerald-700">
                               {formatRupiah(it.profit ?? 0)}
                             </td>
                             <td className="py-3 text-center">
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold">
                                 {it.margin}%
                               </span>
                             </td>
@@ -344,14 +341,14 @@ export function BestSellerReportView({
                 {items.map((it) => (
                   <div
                     key={it.productId}
-                    className="p-3.5 rounded-xl border border-border bg-slate-50/50 space-y-2.5"
+                    className="p-3.5 rounded-xl border border-border bg-card space-y-2.5 hover:border-slate-300 transition"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span
-                          className={`inline-flex h-6 w-6 items-center justify-center rounded-lg font-bold text-xs ${
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-md font-bold text-xs ${
                             it.rank === 1
-                              ? "bg-amber-100 text-amber-900 ring-1 ring-amber-300"
+                              ? "bg-amber-100 text-amber-900"
                               : it.rank === 2
                               ? "bg-slate-200 text-slate-800"
                               : it.rank === 3
@@ -363,9 +360,9 @@ export function BestSellerReportView({
                         </span>
                         <span className="font-mono text-xs text-muted-foreground">{it.sku}</span>
                       </div>
-                      <Badge variant="secondary" className="text-[11px] font-bold">
-                        {it.qty} unit terjual
-                      </Badge>
+                      <span className="px-2 py-0.5 rounded-md border border-border bg-slate-50 text-[11px] font-semibold text-slate-800">
+                        {it.qty} unit
+                      </span>
                     </div>
 
                     <div>
@@ -381,7 +378,7 @@ export function BestSellerReportView({
                         <span className="text-muted-foreground">Kontribusi:</span>
                         <span className="font-semibold text-foreground">{it.sharePercentage}%</span>
                       </div>
-                      <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                         <div
                           className="h-full bg-indigo-600 rounded-full"
                           style={{ width: `${Math.min(100, Math.max(3, it.sharePercentage))}%` }}
@@ -389,17 +386,17 @@ export function BestSellerReportView({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs">
+                    <div className="flex items-center justify-between pt-2 border-t border-border text-xs">
                       <span className="text-muted-foreground">Total Omzet:</span>
-                      <span className="font-extrabold text-foreground">
+                      <span className="font-bold text-foreground">
                         {formatRupiah(it.revenue)}
                       </span>
                     </div>
 
                     {isSuperAdmin && (
-                      <div className="flex items-center justify-between bg-emerald-50/60 p-2 rounded-lg text-xs text-emerald-900">
+                      <div className="flex items-center justify-between bg-slate-50 border border-border p-2 rounded-lg text-xs text-slate-800">
                         <span>Laba: {formatRupiah(it.profit ?? 0)}</span>
-                        <span className="font-bold">Margin: {it.margin}%</span>
+                        <span className="font-bold text-emerald-700">Margin: {it.margin}%</span>
                       </div>
                     )}
                   </div>

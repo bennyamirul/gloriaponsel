@@ -2,17 +2,16 @@
 
 import { useState } from "react";
 import { formatRupiah } from "@/lib/utils";
-import { exportToCSV, triggerPrint } from "@/lib/export-utils";
+import { exportToExcel, triggerPrint } from "@/lib/export-utils";
 import {
   Boxes,
   Package,
   DollarSign,
   TrendingUp,
   AlertTriangle,
-  Download,
   Printer,
   Search,
-  Filter,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -84,7 +83,7 @@ export function StockReportView({
       (p.variant && p.variant.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const handleExportCSV = () => {
+  const handleExportExcel = () => {
     const headers = isSuperAdmin
       ? [
           "Kode SKU",
@@ -92,13 +91,13 @@ export function StockReportView({
           "Varian",
           "Kategori",
           "Brand",
-          "Stok",
+          "Stok (Unit)",
           "Min Stok",
-          "Status",
-          "Harga Modal",
-          "Nilai Modal (HPP)",
-          "Harga Jual",
-          "Nilai Jual Retail",
+          "Status Stok",
+          "Harga Modal (Rp)",
+          "Valuasi Modal (Rp)",
+          "Harga Jual (Rp)",
+          "Valuasi Jual Retail (Rp)",
         ]
       : [
           "Kode SKU",
@@ -106,11 +105,11 @@ export function StockReportView({
           "Varian",
           "Kategori",
           "Brand",
-          "Stok",
+          "Stok (Unit)",
           "Min Stok",
-          "Status",
-          "Harga Jual",
-          "Nilai Jual Retail",
+          "Status Stok",
+          "Harga Jual (Rp)",
+          "Valuasi Jual Retail (Rp)",
         ];
 
     const rows = filteredProducts.map((p) => {
@@ -139,7 +138,7 @@ export function StockReportView({
     });
 
     const dateStr = new Date().toISOString().slice(0, 10);
-    exportToCSV(`Laporan_Valuasi_Stok_${dateStr}.csv`, headers, rows);
+    exportToExcel(`Laporan_Valuasi_Stok_${dateStr}.xlsx`, "Valuasi Stok", headers, rows);
   };
 
   return (
@@ -147,7 +146,7 @@ export function StockReportView({
       {/* Action Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg font-bold text-foreground">Laporan Stok & Valuasi Inventaris</h3>
+          <h3 className="text-base font-bold text-foreground">Laporan Stok & Valuasi Inventaris</h3>
           <p className="text-xs text-muted-foreground">
             {isSuperAdmin
               ? "Valuasi total aset stok berdasarkan harga modal (HPP) & potensi nilai jual."
@@ -159,37 +158,39 @@ export function StockReportView({
             variant="outline"
             size="sm"
             onClick={triggerPrint}
-            className="text-xs font-semibold"
+            className="text-xs font-medium border-border"
           >
-            <Printer className="mr-1.5 h-3.5 w-3.5" />
+            <Printer className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
             Cetak PDF
           </Button>
           <Button
             size="sm"
-            onClick={handleExportCSV}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
+            onClick={handleExportExcel}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs"
           >
-            <Download className="mr-1.5 h-3.5 w-3.5" />
-            Ekspor Excel (CSV)
+            <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
+            Unduh Excel (.xlsx)
           </Button>
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Clean Minimalist KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-0 shadow-sm bg-[var(--info-bg)]/60">
+        <Card className="border border-border bg-card shadow-xs">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Total Unit Fisik</span>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600/15 text-blue-700">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Total Unit Fisik
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                 <Boxes className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-3">
-              <h4 className="text-xl font-extrabold text-slate-900">
+              <h4 className="text-2xl font-bold tracking-tight text-foreground">
                 {summary.totalPhysicalStock} Unit
               </h4>
-              <p className="text-[11px] text-slate-600 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Dari {summary.totalSkus} varian SKU aktif
               </p>
             </div>
@@ -197,38 +198,42 @@ export function StockReportView({
         </Card>
 
         {isSuperAdmin ? (
-          <Card className="border-0 shadow-sm bg-[var(--purple-bg)]/60">
+          <Card className="border border-border bg-card shadow-xs">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">Valuasi Modal (HPP Aset)</span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600/15 text-purple-700">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Valuasi Modal (HPP)
+                </span>
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                   <DollarSign className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <h4 className="text-xl font-extrabold text-slate-900">
+                <h4 className="text-2xl font-bold tracking-tight text-foreground">
                   {formatRupiah(summary.totalAssetCostValue ?? 0)}
                 </h4>
-                <p className="text-[11px] text-purple-800 font-semibold mt-1">
-                  Modal tertanam di inventaris
+                <p className="text-xs text-muted-foreground mt-1">
+                  Modal aset tertanam di inventaris
                 </p>
               </div>
             </CardContent>
           </Card>
         ) : (
-          <Card className="border-0 shadow-sm bg-[var(--warning-bg)]/60">
+          <Card className="border border-border bg-card shadow-xs">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">Status Stok Menipis</span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-600/15 text-amber-700">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Stok Menipis
+                </span>
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
                   <AlertTriangle className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <h4 className="text-xl font-extrabold text-slate-900">
+                <h4 className="text-2xl font-bold tracking-tight text-foreground">
                   {summary.lowStockSkus} SKU
                 </h4>
-                <p className="text-[11px] text-amber-800 font-semibold mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Habis: {summary.outOfStockSkus} SKU
                 </p>
               </div>
@@ -236,19 +241,21 @@ export function StockReportView({
           </Card>
         )}
 
-        <Card className="border-0 shadow-sm bg-[var(--success-bg)]/60">
+        <Card className="border border-border bg-card shadow-xs">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700">Valuasi Harga Jual</span>
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600/15 text-emerald-700">
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Valuasi Harga Jual
+              </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                 <Package className="h-4 w-4" />
               </div>
             </div>
             <div className="mt-3">
-              <h4 className="text-xl font-extrabold text-slate-900">
+              <h4 className="text-2xl font-bold tracking-tight text-foreground">
                 {formatRupiah(summary.totalAssetRetailValue)}
               </h4>
-              <p className="text-[11px] text-slate-600 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Estimasi nilai pasar seluruh stok
               </p>
             </div>
@@ -256,38 +263,42 @@ export function StockReportView({
         </Card>
 
         {isSuperAdmin ? (
-          <Card className="border-0 shadow-sm bg-emerald-100/60">
+          <Card className="border border-border bg-card shadow-xs">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">Potensi Laba Kotor</span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600/15 text-emerald-700">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Potensi Laba Kotor
+                </span>
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
                   <TrendingUp className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <h4 className="text-xl font-extrabold text-emerald-950">
+                <h4 className="text-2xl font-bold tracking-tight text-emerald-700">
                   {formatRupiah(summary.potentialGrossProfit ?? 0)}
                 </h4>
-                <p className="text-[11px] text-emerald-800 font-semibold mt-1">
-                  Jika semua stok habis terjual
+                <p className="text-xs text-muted-foreground mt-1">
+                  Margin keuntungan jika semua stok terjual
                 </p>
               </div>
             </CardContent>
           </Card>
         ) : (
-          <Card className="border-0 shadow-sm bg-[var(--purple-bg)]/60">
+          <Card className="border border-border bg-card shadow-xs">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">Total Varian Aktif</span>
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-600/15 text-purple-700">
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Total SKU Aktif
+                </span>
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                   <Boxes className="h-4 w-4" />
                 </div>
               </div>
               <div className="mt-3">
-                <h4 className="text-xl font-extrabold text-slate-900">
+                <h4 className="text-2xl font-bold tracking-tight text-foreground">
                   {summary.totalSkus} SKU
                 </h4>
-                <p className="text-[11px] text-slate-600 mt-1">Siap dijual di kasir POS</p>
+                <p className="text-xs text-muted-foreground mt-1">Siap dijual di kasir POS</p>
               </div>
             </CardContent>
           </Card>
@@ -295,7 +306,7 @@ export function StockReportView({
       </div>
 
       {/* Filter & Table Container */}
-      <Card className="shadow-sm border border-border">
+      <Card className="border border-border bg-card shadow-xs">
         <CardContent className="p-5">
           {/* Filters Bar */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between pb-4 border-b border-border">
@@ -305,7 +316,7 @@ export function StockReportView({
                 placeholder="Cari SKU / nama produk..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 text-xs h-9"
+                className="pl-8 text-xs h-9 bg-background"
               />
             </div>
 
@@ -313,7 +324,7 @@ export function StockReportView({
               <select
                 value={selectedCategory}
                 onChange={(e) => handleFilter(e.target.value, selectedBrand, selectedStatus)}
-                className="h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 <option value="all">Semua Kategori</option>
                 {categories.map((c) => (
@@ -326,7 +337,7 @@ export function StockReportView({
               <select
                 value={selectedBrand}
                 onChange={(e) => handleFilter(selectedCategory, e.target.value, selectedStatus)}
-                className="h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 <option value="all">Semua Brand</option>
                 {brands.map((b) => (
@@ -339,7 +350,7 @@ export function StockReportView({
               <select
                 value={selectedStatus}
                 onChange={(e) => handleFilter(selectedCategory, selectedBrand, e.target.value)}
-                className="h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                className="h-9 rounded-xl border border-input bg-background px-3 py-1 text-xs shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 <option value="all">Semua Status Stok</option>
                 <option value="safe">Stok Aman</option>
@@ -356,10 +367,10 @@ export function StockReportView({
           ) : (
             <>
               {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto mt-4">
+              <div className="hidden md:block overflow-x-auto mt-3">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b text-muted-foreground font-semibold">
+                    <tr className="border-b border-border text-muted-foreground font-semibold">
                       <th className="pb-3">SKU</th>
                       <th className="pb-3">Produk</th>
                       <th className="pb-3">Kategori & Brand</th>
@@ -377,7 +388,7 @@ export function StockReportView({
                   </thead>
                   <tbody className="divide-y divide-border">
                     {filteredProducts.map((p) => (
-                      <tr key={p.id} className="hover:bg-muted/30 transition-colors">
+                      <tr key={p.id} className="hover:bg-muted/40 transition-colors">
                         <td className="py-3 font-mono font-semibold text-foreground">{p.sku}</td>
                         <td className="py-3">
                           <p className="font-medium text-foreground">{p.name}</p>
@@ -395,34 +406,33 @@ export function StockReportView({
                           </span>
                         </td>
                         <td className="py-3 text-center">
-                          <Badge
-                            variant="secondary"
-                            className={
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                               p.status === "safe"
-                                ? "bg-emerald-100 text-emerald-800 text-[10px]"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                                 : p.status === "low"
-                                ? "bg-amber-100 text-amber-800 text-[10px]"
-                                : "bg-rose-100 text-rose-800 text-[10px]"
-                            }
+                                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                : "bg-rose-50 text-rose-700 border border-rose-200"
+                            }`}
                           >
                             {p.status === "safe"
                               ? "Aman"
                               : p.status === "low"
                               ? "Menipis"
                               : "Habis"}
-                          </Badge>
+                          </span>
                         </td>
                         {isSuperAdmin && (
                           <>
                             <td className="py-3 text-right text-muted-foreground">
                               {formatRupiah(p.purchasePrice || 0)}
                             </td>
-                            <td className="py-3 text-right font-semibold text-indigo-700">
+                            <td className="py-3 text-right font-semibold text-slate-900">
                               {formatRupiah(p.costValuation || 0)}
                             </td>
                           </>
                         )}
-                        <td className="py-3 text-right text-foreground">
+                        <td className="py-3 text-right text-muted-foreground">
                           {formatRupiah(p.sellingPrice)}
                         </td>
                         <td className="py-3 text-right font-bold text-foreground">
@@ -435,30 +445,29 @@ export function StockReportView({
               </div>
 
               {/* Mobile Card List View */}
-              <div className="grid grid-cols-1 gap-3 md:hidden mt-4">
+              <div className="grid grid-cols-1 gap-3 md:hidden mt-3">
                 {filteredProducts.map((p) => (
                   <div
                     key={p.id}
-                    className="p-3.5 rounded-xl border border-border bg-slate-50/50 space-y-2"
+                    className="p-3.5 rounded-xl border border-border bg-card space-y-2 hover:border-slate-300 transition"
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-mono text-xs font-bold text-foreground">{p.sku}</span>
-                      <Badge
-                        variant="secondary"
-                        className={
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                           p.status === "safe"
-                            ? "bg-emerald-100 text-emerald-800 text-[10px]"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
                             : p.status === "low"
-                            ? "bg-amber-100 text-amber-800 text-[10px]"
-                            : "bg-rose-100 text-rose-800 text-[10px]"
-                        }
+                            ? "bg-amber-50 text-amber-700 border border-amber-200"
+                            : "bg-rose-50 text-rose-700 border border-rose-200"
+                        }`}
                       >
                         {p.status === "safe"
                           ? "Aman"
                           : p.status === "low"
                           ? "Menipis"
                           : "Habis"}
-                      </Badge>
+                      </span>
                     </div>
                     <div>
                       <p className="text-xs font-bold text-foreground">{p.name}</p>
@@ -467,7 +476,7 @@ export function StockReportView({
                         {p.categoryName} ({p.brandName})
                       </p>
                     </div>
-                    <div className="flex items-center justify-between pt-1 border-t border-border/60 text-xs">
+                    <div className="flex items-center justify-between pt-1 border-t border-border text-xs">
                       <span className="text-muted-foreground">
                         Sisa Stok: <strong className="text-foreground">{p.stock}</strong> unit
                       </span>
@@ -476,7 +485,7 @@ export function StockReportView({
                       </span>
                     </div>
                     {isSuperAdmin && (
-                      <div className="flex items-center justify-between bg-indigo-50/50 p-2 rounded-lg text-[11px] text-indigo-900">
+                      <div className="flex items-center justify-between bg-slate-50 p-2 rounded-lg text-[11px] text-slate-700 border border-border">
                         <span>Valuasi Modal:</span>
                         <span className="font-bold">{formatRupiah(p.costValuation || 0)}</span>
                       </div>
