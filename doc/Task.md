@@ -53,12 +53,12 @@
 - [x] Dashboard: hubungkan stat card & chart ke data nyata (omzet, jumlah transaksi, low stock)
 
 ## Phase 4 — Laporan
-- [ ] Laporan Penjualan (filter rentang tanggal, breakdown per produk/kategori)
-- [ ] Export laporan penjualan ke Excel/PDF
-- [ ] Laporan Stok (stok saat ini + nilai stok, khusus nilai untuk super_admin)
-- [ ] Laporan Laba-Rugi (super_admin only): omzet − HPP
-- [ ] Laporan Produk Terlaris (ranking qty/omzet per rentang waktu)
-- [ ] Guard akses: sembunyikan menu/laporan laba-rugi dari role `admin`
+- [x] Laporan Penjualan (filter rentang tanggal, breakdown per produk/kategori)
+- [x] Export laporan penjualan ke Excel/PDF
+- [x] Laporan Stok (stok saat ini + nilai stok, khusus nilai untuk super_admin)
+- [x] Laporan Laba-Rugi (super_admin only): omzet − HPP
+- [x] Laporan Produk Terlaris (ranking qty/omzet per rentang waktu)
+- [x] Guard akses: sembunyikan menu/laporan laba-rugi dari role `admin`
 
 ## Phase 5 — Manajemen User & Pengaturan
 - [ ] Halaman list akun admin (super_admin only)

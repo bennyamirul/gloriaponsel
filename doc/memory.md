@@ -96,6 +96,10 @@ Login hanya untuk 2 role: `admin` dan `super_admin`.
 | Phase 3 | Aturan Batalkan Transaksi: Kasir hanya transaksi hari ini, Owner kapan saja | Melindungi integritas audit histori penjualan toko |
 | Phase 3 | Kartu Stok dengan Saldo Berjalan (Running Balance) | Menampilkan debit (masuk), kredit (keluar), dan saldo sisa secara kronologis |
 | Phase 3 | Dashboard Terintegrasi Data Riil + Recharts AreaChart | Menampilkan omzet, transaksi, low stock alert, laba kotor role-restricted, dan tren 7 hari |
+| Phase 4 | Laporan Laba-Rugi (P&L) Super Admin Only 2-Layer Guard | Menjamin kerahasiaan margin keuntungan toko dari staf kasir |
+| Phase 4 | Valuasi Stok: Masking Nilai Modal untuk Non-Super Admin | Staf kasir hanya melihat jumlah fisik & nilai jual, bukan modal HPP inventaris |
+| Phase 4 | Ekspor CSV dengan UTF-8 BOM (`\uFEFF`) & Print Preview | Kompatibilitas instan dengan Microsoft Excel Indonesia tanpa dependensi berat |
+| Phase 4 | Agregasi Produk Terlaris berdasarkan Unit & Omzet | Fleksibilitas analisis performa barang cepat laku (fast-moving) vs penghasil omzet |
 
 ## 7. Status Dokumen Lain
 
