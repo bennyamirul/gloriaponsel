@@ -83,6 +83,10 @@ Login hanya untuk 2 role: `admin` dan `super_admin`.
 | Phase 0 | Root folder tanpa `src/` (`app/`, `components/`, `lib/`, `prisma/`) | Menjaga konsistensi struktur folder yang ditentukan di `memory.md` |
 | Phase 0 | Responsive Layout: Desktop Sidebar (fixed 80px) + Mobile BottomNav + Sheet Drawer | Menjamin mobile-first UX untuk kasir di HP & owner di desktop |
 | Phase 0 | Prisma Client singleton di `lib/db.ts` | Mencegah exhaust connection pool saat Next.js hot-reload di dev mode |
+| Phase 1 | JWT via `jose` + `bcryptjs` dengan httpOnly Cookie (8 jam) | Sesuai FRD 3.1, kompatibel Edge runtime Next.js 15 tanpa masalah peer dependency |
+| Phase 1 | Proteksi 2 lapis: Edge `middleware.ts` & Server Action `requireRole()` | Menjamin keamanan tidak hanya di level UI, rute `/users` & `/settings` terkunci untuk admin |
+| Phase 1 | Default seed: `owner@tokohp.com` & `kasir@tokohp.com` (`Password123!`) | Akun siap pakai untuk memvalidasi permission matrix operasional kasir vs owner |
+| Phase 1 | Dynamic Stat Card Laba Kotor vs Produk Aktif di Dashboard | Memenuhi aturan bisnis: harga modal & laba HANYA untuk role super_admin |
 
 ## 7. Status Dokumen Lain
 

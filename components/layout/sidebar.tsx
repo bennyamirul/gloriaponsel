@@ -96,11 +96,9 @@ export function Sidebar({ userRole = "super_admin" }: { userRole?: string }) {
       {/* Bottom Action: Logout */}
       <div className="flex flex-col items-center pt-2">
         <button
-          onClick={() => {
-            // Logout logic will be plugged in Phase 1
-            if (typeof window !== "undefined") {
-              window.location.href = "/login";
-            }
+          onClick={async () => {
+            const { logoutAction } = await import("@/lib/actions/auth.actions");
+            await logoutAction();
           }}
           className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 hover:bg-rose-950/40 hover:text-rose-400 transition-all"
           title="Keluar"

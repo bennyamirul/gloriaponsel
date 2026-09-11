@@ -1,3 +1,4 @@
+import { getCurrentUser } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -7,24 +8,49 @@ import {
   TrendingUp,
   Package,
   ArrowUpRight,
+  ShieldAlert,
+  Smartphone,
 } from "lucide-react";
 
-export default function DashboardPage() {
+export default async function DashboardPage(props: {
+  searchParams?: Promise<{ access_denied?: string }>;
+}) {
+  const user = await getCurrentUser();
+  const searchParams = await props.searchParams;
+  const isAccessDenied = searchParams?.access_denied === "true";
+  const isSuperAdmin = user?.role === "super_admin";
+
   return (
     <div className="space-y-6">
+      {/* Access Denied Banner if Admin attempted to access Super Admin route */}
+      {isAccessDenied && (
+        <div className="flex items-center gap-3 rounded-2xl border border-rose-500/30 bg-rose-50 p-4 text-rose-800 animate-in fade-in slide-in-from-top-2">
+          <ShieldAlert className="h-5 w-5 text-rose-600 shrink-0" />
+          <div className="text-sm">
+            <p className="font-semibold">Akses Terbatas</p>
+            <p className="text-xs text-rose-700">
+              Anda tidak memiliki hak akses (Super Admin) untuk membuka halaman tersebut.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Welcome Banner */}
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">
-            Ringkasan Toko
+            Halo, {user?.name || "Pengguna"}! 👋
           </h2>
           <p className="text-sm text-muted-foreground">
-            Pantau performa penjualan dan ketersediaan stok produk handphone secara real-time.
+            Ringkasan operasional toko handphone hari ini • Masuk sebagai{" "}
+            <span className="font-semibold text-foreground capitalize">
+              {user?.role.replace("_", " ") || "Admin"}
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-2 mt-2 sm:mt-0">
           <Badge variant="outline" className="px-3 py-1 bg-white shadow-sm font-medium">
-            Status Sistem: <span className="ml-1 text-emerald-600 font-semibold">Aktif</span>
+            Status Sistem: <span className="ml-1 text-emerald-600 font-semibold">Online</span>
           </Badge>
         </div>
       </div>
@@ -92,25 +118,50 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Card 4: Estimasi Laba Kotor (Super Admin Only) */}
-        <Card className="border-0 shadow-sm bg-[var(--success-bg)]/60 hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-700">Estimasi Laba Kotor</span>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600/15 text-emerald-700">
-                <TrendingUp className="h-5 w-5" />
+        {/* Card 4: Role-Based (Laba Kotor untuk Super Admin, Produk Aktif untuk Admin) */}
+        {isSuperAdmin ? (
+          <Card className="border-0 shadow-sm bg-[var(--success-bg)]/60 hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-700">
+                  Estimasi Laba Kotor
+                </span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600/15 text-emerald-700">
+                  <TrendingUp className="h-5 w-5" />
+                </div>
               </div>
-            </div>
-            <div className="mt-4">
-              <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                Rp 2.850.000
-              </h3>
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-800 font-semibold">
-                <span>Margin: ~19.6%</span>
+              <div className="mt-4">
+                <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                  Rp 2.850.000
+                </h3>
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-800 font-semibold">
+                  <span>Margin: ~19.6% (Super Admin)</span>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-0 shadow-sm bg-[var(--success-bg)]/60 hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-700">
+                  Produk Siap Jual
+                </span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600/15 text-emerald-700">
+                  <Smartphone className="h-5 w-5" />
+                </div>
+              </div>
+              <div className="mt-4">
+                <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                  48 SKU
+                </h3>
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-800 font-medium">
+                  <span>Semua produk aktif</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Placeholder Grid for Chart & Quick Tables */}
@@ -128,7 +179,7 @@ export default function DashboardPage() {
             <div className="flex h-64 items-center justify-center rounded-xl bg-muted/30 border border-dashed border-border mt-6">
               <div className="flex flex-col items-center gap-2 text-muted-foreground">
                 <TrendingUp className="h-8 w-8 text-indigo-500" />
-                <span className="text-sm font-medium">Visualisasi Recharts akan dihubungkan di Phase 1</span>
+                <span className="text-sm font-medium">Recharts Shell Siap (Data transaksi riil dihubungkan di Phase 3)</span>
               </div>
             </div>
           </CardContent>

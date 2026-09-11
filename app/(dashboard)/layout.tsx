@@ -1,13 +1,24 @@
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // In Phase 1, user session will be injected here via Auth.js
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
   return (
-    <DashboardShell title="Dashboard Toko" userRole="super_admin" userName="Owner Toko">
+    <DashboardShell
+      title="Dashboard Toko"
+      userRole={user.role}
+      userName={user.name}
+    >
       {children}
     </DashboardShell>
   );

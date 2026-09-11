@@ -134,11 +134,10 @@ export function BottomNav({ userRole = "super_admin" }: BottomNavProps) {
 
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   setIsMoreOpen(false);
-                  if (typeof window !== "undefined") {
-                    window.location.href = "/login";
-                  }
+                  const { logoutAction } = await import("@/lib/actions/auth.actions");
+                  await logoutAction();
                 }}
                 className="flex items-center gap-3 rounded-xl p-3 text-sm font-medium text-rose-600 hover:bg-rose-50 transition"
               >

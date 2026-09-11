@@ -134,10 +134,9 @@ export function Topbar({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-rose-600 focus:bg-rose-50 focus:text-rose-700"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  window.location.href = "/login";
-                }
+              onClick={async () => {
+                const { logoutAction } = await import("@/lib/actions/auth.actions");
+                await logoutAction();
               }}
             >
               Keluar

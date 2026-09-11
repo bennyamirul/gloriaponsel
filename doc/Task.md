@@ -17,15 +17,15 @@
 - [x] Setup ikon (`lucide-react`)
 
 ## Phase 1 — Autentikasi & Kerangka Dashboard
-- [ ] Buat tabel `users` (migrasi) + enum role
-- [ ] Seed 1 akun `super_admin` default
-- [ ] Setup Auth.js/JWT: login credentials, hash password (bcrypt/argon2)
-- [ ] Halaman `/login` (form email+password, error handling)
-- [ ] Middleware proteksi `(dashboard)/**` — redirect ke login jika belum auth
-- [ ] Role guard helper (`requireRole(["super_admin"])`) untuk dipakai di halaman/API tertentu
-- [ ] Halaman `/dashboard` shell: stat card placeholder, chart placeholder, tabel placeholder
-- [ ] Tombol logout (clear session)
-- [ ] Layout responsif: sidebar (desktop) ↔ bottom nav (mobile) sudah berfungsi switch
+- [x] Buat tabel `users` (migrasi) + enum role
+- [x] Seed 1 akun `super_admin` default
+- [x] Setup Auth.js/JWT: login credentials, hash password (bcrypt/argon2)
+- [x] Halaman `/login` (form email+password, error handling)
+- [x] Middleware proteksi `(dashboard)/**` — redirect ke login jika belum auth
+- [x] Role guard helper (`requireRole(["super_admin"])`) untuk dipakai di halaman/API tertentu
+- [x] Halaman `/dashboard` shell: stat card placeholder, chart placeholder, tabel placeholder
+- [x] Tombol logout (clear session)
+- [x] Layout responsif: sidebar (desktop) ↔ bottom nav (mobile) sudah berfungsi switch
 
 ## Phase 2 — Master Data
 - [ ] Tabel & CRUD `categories` (list, tambah, edit, hapus/nonaktifkan)
