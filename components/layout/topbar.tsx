@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { logoutAction } from "@/lib/actions/auth.actions";
 import { Search, Bell, Smartphone, PanelLeft } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -158,7 +159,6 @@ export function Topbar({
             <DropdownMenuItem
               className="text-rose-600 focus:bg-rose-50 focus:text-rose-700"
               onClick={async () => {
-                const { logoutAction } = await import("@/lib/actions/auth.actions");
                 await logoutAction();
               }}
             >

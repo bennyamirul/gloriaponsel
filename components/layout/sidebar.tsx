@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { logoutAction } from "@/lib/actions/auth.actions";
 import {
   LayoutDashboard,
   Package,
@@ -79,7 +80,6 @@ export function Sidebar({
   const pathname = usePathname();
 
   const handleLogout = async () => {
-    const { logoutAction } = await import("@/lib/actions/auth.actions");
     await logoutAction();
   };
 

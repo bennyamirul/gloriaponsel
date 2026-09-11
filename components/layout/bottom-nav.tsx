@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { logoutAction } from "@/lib/actions/auth.actions";
 import {
   LayoutDashboard,
   Package,
@@ -136,7 +137,6 @@ export function BottomNav({ userRole = "super_admin" }: BottomNavProps) {
                 type="button"
                 onClick={async () => {
                   setIsMoreOpen(false);
-                  const { logoutAction } = await import("@/lib/actions/auth.actions");
                   await logoutAction();
                 }}
                 className="flex items-center gap-3 rounded-xl p-3 text-sm font-medium text-rose-600 hover:bg-rose-50 transition"
