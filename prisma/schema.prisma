@@ -209,3 +209,17 @@ model SaleItem {
 
   @@map("sale_items")
 }
+
+model StoreSetting {
+  id              String   @id @default(uuid()) @db.Uuid
+  storeName       String   @default("Toko Handphone") @map("store_name")
+  phone           String?  @default("081234567890")
+  address         String?  @default("Jl. Telekomunikasi No. 1, Jakarta")
+  logoUrl         String?  @map("logo_url")
+  receiptFooter   String?  @default("Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.") @map("receipt_footer")
+  defaultMinStock Int      @default(5) @map("default_min_stock")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("store_settings")
+}
+

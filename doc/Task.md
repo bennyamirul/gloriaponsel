@@ -61,12 +61,12 @@
 - [x] Guard akses: sembunyikan menu/laporan laba-rugi dari role `admin`
 
 ## Phase 5 — Manajemen User & Pengaturan
-- [ ] Halaman list akun admin (super_admin only)
-- [ ] Form tambah admin baru (generate password sementara / kirim manual)
-- [ ] Nonaktifkan/aktifkan akun admin
-- [ ] Ubah role user (dengan proteksi: tidak bisa nonaktifkan super_admin terakhir)
-- [ ] Halaman Pengaturan Profil Toko (nama, alamat, logo)
-- [ ] Pengaturan default `min_stock` global (opsional)
+- [x] Halaman list akun admin (super_admin only)
+- [x] Form tambah admin baru (generate password sementara / kirim manual)
+- [x] Nonaktifkan/aktifkan akun admin
+- [x] Ubah role user (dengan proteksi: tidak bisa nonaktifkan super_admin terakhir)
+- [x] Halaman Pengaturan Profil Toko (nama, alamat, logo)
+- [x] Pengaturan default `min_stock` global (opsional)
 
 ## Phase 6 — Polish, Responsif, & Testing
 - [ ] Review semua halaman di breakpoint mobile (bottom nav, drawer form, card list) — bandingkan dengan `design.md`

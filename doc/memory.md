@@ -100,6 +100,9 @@ Login hanya untuk 2 role: `admin` dan `super_admin`.
 | Phase 4 | Valuasi Stok: Masking Nilai Modal untuk Non-Super Admin | Staf kasir hanya melihat jumlah fisik & nilai jual, bukan modal HPP inventaris |
 | Phase 4 | Ekspor CSV dengan UTF-8 BOM (`\uFEFF`) & Print Preview | Kompatibilitas instan dengan Microsoft Excel Indonesia tanpa dependensi berat |
 | Phase 4 | Agregasi Produk Terlaris berdasarkan Unit & Omzet | Fleksibilitas analisis performa barang cepat laku (fast-moving) vs penghasil omzet |
+| Phase 5 | Proteksi Lockout Super Admin (Anti-Lockout) | Mencegah penonaktifan / demosi super_admin terakhir agar toko tidak kehilangan akses admin |
+| Phase 5 | Tabel `store_settings` Singleton Konfigurasi Toko | Menyimpan nama toko, telepon, alamat, logo, footer struk, dan default min_stock global |
+| Phase 5 | Pratinjau Struk Kasir Termal 58mm Real-time | Memudahkan pemilik toko melihat hasil perubahan nama & footer struk sebelum dicetak |
 
 ## 7. Status Dokumen Lain
 
