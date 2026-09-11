@@ -9,8 +9,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Toko Handphone — Admin Dashboard",
-  description: "Sistem Manajemen Internal Toko Handphone",
+  title: "Gloria Ponsel — Admin Dashboard",
+  description: "Sistem Manajemen Internal Gloria Ponsel",
+  icons: {
+    icon: "/logoGP.png",
+  },
 };
 
 export default function RootLayout({

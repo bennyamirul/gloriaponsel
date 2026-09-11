@@ -18,7 +18,8 @@ export async function getStoreSettings() {
   if (!settings) {
     settings = await db.storeSetting.create({
       data: {
-        storeName: "Toko Handphone Sejahtera",
+        storeName: "Gloria Ponsel",
+        logoUrl: "/logoGP.png",
         phone: "0812-3456-7890",
         address: "Jl. Sudirman No. 45, Jakarta Pusat",
         receiptFooter: "Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar.",

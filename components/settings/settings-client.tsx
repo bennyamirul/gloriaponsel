@@ -118,7 +118,7 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
                 <Input
                   value={storeName}
                   onChange={(e) => setStoreName(e.target.value)}
-                  placeholder="mis. Toko Handphone Sejahtera"
+                  placeholder="mis. Gloria Ponsel"
                   className="mt-1 text-xs"
                   required
                 />

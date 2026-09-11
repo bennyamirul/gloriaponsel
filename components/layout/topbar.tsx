@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Search, Bell, Smartphone, PanelLeft } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -62,8 +63,14 @@ export function Topbar({
             <PanelLeft className="h-4.5 w-4.5" />
           </Button>
         )}
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm md:hidden">
-          <Smartphone className="h-5 w-5" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white p-0.5 shadow-sm border border-border md:hidden overflow-hidden shrink-0">
+          <Image
+            src="/logoGP.png"
+            alt="Gloria Ponsel"
+            width={32}
+            height={32}
+            className="h-full w-full object-contain"
+          />
         </div>
         <h1 className="text-lg md:text-xl font-bold tracking-tight text-foreground">
           {title}

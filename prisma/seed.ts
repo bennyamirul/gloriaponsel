@@ -200,7 +200,8 @@ async function main() {
   if (!storeSetting) {
     await prisma.storeSetting.create({
       data: {
-        storeName: "Toko Handphone Sejahtera",
+        storeName: "Gloria Ponsel",
+        logoUrl: "/logoGP.png",
         phone: "0812-3456-7890",
         address: "Jl. Sudirman No. 45, Jakarta Pusat",
         receiptFooter: "Terima kasih atas kunjungan Anda!\nGaransi toko 7 hari sejak pembelian.\nBarang yang sudah dibeli tidak dapat diuangkan kembali.",

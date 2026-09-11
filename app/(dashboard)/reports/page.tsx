@@ -32,7 +32,7 @@ export default async function ReportsPage() {
           Laporan Bisnis & Analitik
         </h2>
         <p className="text-sm text-muted-foreground">
-          Pantau omzet penjualan, valuasi stok gudang, produk terlaris, dan performa laba-rugi toko handphone.
+          Pantau omzet penjualan, valuasi stok gudang, produk terlaris, dan performa laba-rugi Gloria Ponsel.
         </p>
       </div>
 

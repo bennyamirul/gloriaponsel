@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -111,12 +112,19 @@ export function Sidebar({
             href="/dashboard"
             className="flex items-center gap-3 group transition"
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/30 group-hover:bg-indigo-500 transition">
-              <Smartphone className="h-5 w-5" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white p-0.5 shadow-md shadow-emerald-950/20 overflow-hidden">
+              <Image
+                src="/logoGP.png"
+                alt="Gloria Ponsel"
+                width={36}
+                height={36}
+                className="h-full w-full object-contain"
+                priority
+              />
             </div>
             <div className="flex flex-col text-left">
               <span className="text-sm font-bold tracking-tight text-white leading-none">
-                Toko Handphone
+                Gloria Ponsel
               </span>
               <span className="text-[11px] font-medium text-slate-400 mt-1">
                 Admin Dashboard
@@ -212,10 +220,17 @@ export function Sidebar({
       <div className="flex flex-col items-center gap-2">
         <Link
           href="/dashboard"
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/30 transition hover:bg-indigo-500"
-          title="Toko Handphone"
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white p-0.5 shadow-md shadow-emerald-950/20 transition hover:scale-105 overflow-hidden"
+          title="Gloria Ponsel"
         >
-          <Smartphone className="h-5 w-5" />
+          <Image
+            src="/logoGP.png"
+            alt="Gloria Ponsel"
+            width={36}
+            height={36}
+            className="h-full w-full object-contain"
+            priority
+          />
         </Link>
 
         {onToggle && (

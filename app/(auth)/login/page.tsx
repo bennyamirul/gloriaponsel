@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -79,12 +80,19 @@ function LoginForm() {
     <div className="w-full max-w-md space-y-6 relative z-10">
       <Card className="border-slate-800/80 bg-slate-900/90 text-white shadow-2xl backdrop-blur-md rounded-3xl">
         <CardHeader className="space-y-3 text-center pb-6">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-xl shadow-indigo-600/30">
-            <Smartphone className="h-7 w-7" />
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white p-1 shadow-xl shadow-emerald-950/30 overflow-hidden">
+            <Image
+              src="/logoGP.png"
+              alt="Gloria Ponsel"
+              width={64}
+              height={64}
+              className="h-full w-full object-contain"
+              priority
+            />
           </div>
           <div>
             <CardTitle className="text-2xl font-bold tracking-tight text-white">
-              Toko Handphone
+              Gloria Ponsel
             </CardTitle>
             <CardDescription className="text-sm text-slate-400 mt-1">
               Sistem Manajemen & Admin Dashboard Internal

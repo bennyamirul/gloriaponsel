@@ -32,7 +32,7 @@ export function SalesTabsClient({
             Transaksi Penjualan
           </h2>
           <p className="text-sm text-muted-foreground">
-            Kasir point-of-sale toko handphone dan riwayat transaksi faktur.
+            Kasir point-of-sale Gloria Ponsel dan riwayat transaksi faktur.
           </p>
         </div>
 
