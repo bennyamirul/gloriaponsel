@@ -1,6 +1,11 @@
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
+import { getDashboardSummary } from "@/lib/actions/dashboard.actions";
+import { formatRupiah } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SalesTrendChart } from "@/components/dashboard/sales-trend-chart";
 import {
   DollarSign,
   ShoppingCart,
@@ -8,17 +13,39 @@ import {
   TrendingUp,
   Package,
   ArrowUpRight,
+  ArrowDownRight,
   ShieldAlert,
   Smartphone,
+  ArrowRight,
+  Clock,
+  Receipt,
 } from "lucide-react";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage(props: {
   searchParams?: Promise<{ access_denied?: string }>;
 }) {
-  const user = await getCurrentUser();
+  const [user, summary] = await Promise.all([
+    getCurrentUser(),
+    getDashboardSummary(),
+  ]);
+
   const searchParams = await props.searchParams;
   const isAccessDenied = searchParams?.access_denied === "true";
   const isSuperAdmin = user?.role === "super_admin";
+
+  const todayDateStr = new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date());
+
+  const avgTransaction =
+    summary.transactionsTodayCount > 0
+      ? summary.omzetToday / summary.transactionsTodayCount
+      : 0;
 
   return (
     <div className="space-y-6">
@@ -36,22 +63,25 @@ export default async function DashboardPage(props: {
       )}
 
       {/* Welcome Banner */}
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">
             Halo, {user?.name || "Pengguna"}! 👋
           </h2>
           <p className="text-sm text-muted-foreground">
-            Ringkasan operasional toko handphone hari ini • Masuk sebagai{" "}
+            {todayDateStr} • Masuk sebagai{" "}
             <span className="font-semibold text-foreground capitalize">
               {user?.role.replace("_", " ") || "Admin"}
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2 mt-2 sm:mt-0">
-          <Badge variant="outline" className="px-3 py-1 bg-white shadow-sm font-medium">
-            Status Sistem: <span className="ml-1 text-emerald-600 font-semibold">Online</span>
-          </Badge>
+        <div className="flex items-center gap-2">
+          <Button asChild size="sm" className="shadow-sm font-semibold">
+            <Link href="/sales">
+              <ShoppingCart className="mr-1.5 h-4 w-4" />
+              Buka Kasir POS
+            </Link>
+          </Button>
         </div>
       </div>
 
@@ -68,17 +98,26 @@ export default async function DashboardPage(props: {
             </div>
             <div className="mt-4">
               <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                Rp 14.500.000
+                {formatRupiah(summary.omzetToday)}
               </h3>
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 font-semibold">
-                <ArrowUpRight className="h-4 w-4" />
-                <span>+12.5% dari kemarin</span>
+              <div className="mt-2 flex items-center gap-1.5 text-xs font-semibold">
+                {summary.revenueChangePercentage >= 0 ? (
+                  <span className="flex items-center text-emerald-700">
+                    <ArrowUpRight className="h-4 w-4 mr-0.5" />
+                    +{summary.revenueChangePercentage}% vs kemarin
+                  </span>
+                ) : (
+                  <span className="flex items-center text-rose-600">
+                    <ArrowDownRight className="h-4 w-4 mr-0.5" />
+                    {summary.revenueChangePercentage}% vs kemarin
+                  </span>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Card 2: Total Transaksi */}
+        {/* Card 2: Total Transaksi Hari Ini */}
         <Card className="border-0 shadow-sm bg-[var(--purple-bg)]/60 hover:shadow-md transition-shadow">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -89,34 +128,37 @@ export default async function DashboardPage(props: {
             </div>
             <div className="mt-4">
               <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                8 Transaksi
+                {summary.transactionsTodayCount} Transaksi
               </h3>
               <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-                <span>Rata-rata: Rp 1.812.500</span>
+                <span>Rata-rata: {formatRupiah(avgTransaction)}</span>
               </div>
             </div>
           </CardContent>
         </Card>
 
         {/* Card 3: Stok Menipis */}
-        <Card className="border-0 shadow-sm bg-[var(--warning-bg)]/60 hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-700">Stok Menipis</span>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600/15 text-amber-700">
-                <AlertTriangle className="h-5 w-5" />
+        <Link href="/stock" className="block">
+          <Card className="border-0 shadow-sm bg-[var(--warning-bg)]/60 hover:shadow-md hover:ring-1 hover:ring-amber-300 transition-all cursor-pointer h-full">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-700">Stok Menipis</span>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-600/15 text-amber-700">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
               </div>
-            </div>
-            <div className="mt-4">
-              <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                3 Produk
-              </h3>
-              <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-800 font-semibold">
-                <span>Perlu restock segera</span>
+              <div className="mt-4">
+                <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                  {summary.lowStockCount} Produk
+                </h3>
+                <div className="mt-2 flex items-center justify-between text-xs text-amber-800 font-semibold">
+                  <span>{summary.lowStockCount > 0 ? "Perlu restock segera" : "Stok aman terkendali"}</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </Link>
 
         {/* Card 4: Role-Based (Laba Kotor untuk Super Admin, Produk Aktif untuk Admin) */}
         {isSuperAdmin ? (
@@ -132,10 +174,10 @@ export default async function DashboardPage(props: {
               </div>
               <div className="mt-4">
                 <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                  Rp 2.850.000
+                  {formatRupiah(summary.profitToday ?? 0)}
                 </h3>
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-800 font-semibold">
-                  <span>Margin: ~19.6% (Super Admin)</span>
+                  <span>Margin: ~{summary.marginPercentage}% (Super Admin)</span>
                 </div>
               </div>
             </CardContent>
@@ -153,7 +195,7 @@ export default async function DashboardPage(props: {
               </div>
               <div className="mt-4">
                 <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                  48 SKU
+                  {summary.totalActiveProducts} SKU
                 </h3>
                 <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-800 font-medium">
                   <span>Semua produk aktif</span>
@@ -164,67 +206,201 @@ export default async function DashboardPage(props: {
         )}
       </div>
 
-      {/* Placeholder Grid for Chart & Quick Tables */}
+      {/* Grid: Sales Trend Chart & Top 5 Products */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Sales Chart Container */}
-        <Card className="lg:col-span-2">
+        {/* Sales Chart Container (2 cols on lg) */}
+        <Card className="lg:col-span-2 shadow-sm border border-border">
           <CardContent className="p-6">
             <div className="flex items-center justify-between pb-4 border-b border-border">
               <div>
                 <h3 className="text-base font-bold text-foreground">Tren Penjualan (7 Hari Terakhir)</h3>
-                <p className="text-xs text-muted-foreground">Grafik fluktuasi omzet penjualan harian</p>
+                <p className="text-xs text-muted-foreground">Fluktuasi omzet harian berdasarkan transaksi lunas</p>
               </div>
-              <Badge variant="secondary">Grafik Omzet</Badge>
+              <Badge variant="secondary" className="font-semibold text-xs">
+                Grafik Omzet
+              </Badge>
             </div>
-            <div className="flex h-64 items-center justify-center rounded-xl bg-muted/30 border border-dashed border-border mt-6">
-              <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                <TrendingUp className="h-8 w-8 text-indigo-500" />
-                <span className="text-sm font-medium">Recharts Shell Siap (Data transaksi riil dihubungkan di Phase 3)</span>
-              </div>
-            </div>
+            <SalesTrendChart data={summary.salesChart} />
           </CardContent>
         </Card>
 
-        {/* Top Products Container */}
-        <Card className="lg:col-span-1">
+        {/* Top Products Container (1 col on lg) */}
+        <Card className="lg:col-span-1 shadow-sm border border-border">
           <CardContent className="p-6">
             <div className="flex items-center justify-between pb-4 border-b border-border">
               <div>
                 <h3 className="text-base font-bold text-foreground">Produk Terlaris</h3>
-                <p className="text-xs text-muted-foreground">Bulan ini</p>
+                <p className="text-xs text-muted-foreground">Berdasarkan kuantitas terjual</p>
               </div>
               <Package className="h-4 w-4 text-muted-foreground" />
             </div>
-            <div className="mt-4 space-y-3">
-              {[
-                { name: "Samsung Galaxy A55 5G", brand: "Samsung", sold: 18 },
-                { name: "iPhone 15 128GB", brand: "Apple", sold: 12 },
-                { name: "Redmi Note 13 Pro", brand: "Xiaomi", sold: 9 },
-              ].map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 rounded-xl bg-muted/40 hover:bg-muted/70 transition"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-700">
-                      #{idx + 1}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-foreground leading-tight">
-                        {item.name}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">{item.brand}</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-900">
-                    {item.sold} terjual
-                  </span>
+            <div className="mt-4 space-y-2.5">
+              {summary.topProducts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                  <Package className="h-8 w-8 text-slate-300 mb-2" />
+                  <p className="text-sm font-medium">Belum ada data penjualan produk</p>
                 </div>
-              ))}
+              ) : (
+                summary.topProducts.map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-3 rounded-xl bg-muted/40 hover:bg-muted/70 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-700">
+                        #{idx + 1}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-foreground leading-tight line-clamp-1">
+                          {item.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{item.brand}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-900 shrink-0">
+                      {item.soldCount} unit
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Recent Transactions Section */}
+      <Card className="shadow-sm border border-border">
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-border">
+            <div>
+              <h3 className="text-base font-bold text-foreground">Transaksi Terakhir</h3>
+              <p className="text-xs text-muted-foreground">
+                5 transaksi kasir terbaru di sistem
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm" className="font-semibold text-xs">
+              <Link href="/sales">
+                Lihat Semua Transaksi
+                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </div>
+
+          {summary.recentSales.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+              <Receipt className="h-10 w-10 text-slate-300 mb-2" />
+              <p className="text-sm font-medium">Belum ada transaksi penjualan tercatat.</p>
+              <Button asChild size="sm" className="mt-3">
+                <Link href="/sales">Mulai Transaksi Baru</Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-4">
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b text-xs font-semibold text-muted-foreground">
+                      <th className="pb-3">No. Faktur</th>
+                      <th className="pb-3">Pelanggan</th>
+                      <th className="pb-3">Waktu</th>
+                      <th className="pb-3">Item</th>
+                      <th className="pb-3">Metode</th>
+                      <th className="pb-3 text-right">Total</th>
+                      <th className="pb-3 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {summary.recentSales.map((sale) => (
+                      <tr key={sale.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="py-3 font-mono text-xs font-semibold text-foreground">
+                          {sale.invoiceNo}
+                        </td>
+                        <td className="py-3 text-sm text-foreground">
+                          {sale.customerName}
+                        </td>
+                        <td className="py-3 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(sale.createdAt).toLocaleTimeString("id-ID", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </td>
+                        <td className="py-3 text-xs text-foreground">
+                          {sale.itemCount} unit
+                        </td>
+                        <td className="py-3 text-xs capitalize text-muted-foreground">
+                          {sale.paymentMethod}
+                        </td>
+                        <td className="py-3 text-right font-semibold text-foreground">
+                          {formatRupiah(sale.total)}
+                        </td>
+                        <td className="py-3 text-center">
+                          <Badge
+                            variant="secondary"
+                            className={
+                              sale.status === "completed"
+                                ? "bg-emerald-100 text-emerald-800 text-[11px] font-semibold"
+                                : "bg-rose-100 text-rose-800 text-[11px] font-semibold"
+                            }
+                          >
+                            {sale.status === "completed" ? "Selesai" : "Batal"}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card List View (No horizontal scroll) */}
+              <div className="grid grid-cols-1 gap-3 md:hidden">
+                {summary.recentSales.map((sale) => (
+                  <div
+                    key={sale.id}
+                    className="p-3.5 rounded-xl border border-border bg-slate-50/50 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-foreground">
+                        {sale.invoiceNo}
+                      </span>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          sale.status === "completed"
+                            ? "bg-emerald-100 text-emerald-800 text-[11px]"
+                            : "bg-rose-100 text-rose-800 text-[11px]"
+                        }
+                      >
+                        {sale.status === "completed" ? "Selesai" : "Batal"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{sale.customerName}</span>
+                      <span>
+                        {new Date(sale.createdAt).toLocaleTimeString("id-ID", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-border/60">
+                      <span className="text-xs text-muted-foreground">
+                        {sale.itemCount} item • {sale.paymentMethod.toUpperCase()}
+                      </span>
+                      <span className="text-sm font-bold text-foreground">
+                        {formatRupiah(sale.total)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

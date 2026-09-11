@@ -39,18 +39,18 @@
 - [x] Versi mobile: form produk pakai `Sheet` full-screen, list produk pakai card list
 
 ## Phase 3 — Stok & Transaksi Penjualan
-- [ ] Tabel `stock_movements`
-- [ ] Halaman "Stok Masuk": pilih supplier, input item + qty + harga beli → insert movement `in` + update `products.stock`
-- [ ] Halaman "Penyesuaian Stok": pilih produk, qty/selisih, alasan wajib → movement `adjustment`
-- [ ] Halaman "Kartu Stok" per produk (riwayat + saldo berjalan)
-- [ ] Badge/alert low stock di list produk & dashboard
-- [ ] Tabel `sales` & `sale_items`
-- [ ] Form transaksi: cari produk (autocomplete), keranjang sementara, hitung subtotal/diskon/total
-- [ ] Validasi qty ≤ stok tersedia (real-time saat input)
-- [ ] Simpan transaksi → generate invoice_no, kurangi stok, insert movement `out`
-- [ ] Halaman riwayat transaksi + detail transaksi
-- [ ] Fitur batalkan transaksi → status `cancelled` + movement pengembalian stok
-- [ ] Dashboard: hubungkan stat card & chart ke data nyata (omzet, jumlah transaksi, low stock)
+- [x] Tabel `stock_movements`
+- [x] Halaman "Stok Masuk": pilih supplier, input item + qty + harga beli → insert movement `in` + update `products.stock`
+- [x] Halaman "Penyesuaian Stok": pilih produk, qty/selisih, alasan wajib → movement `adjustment`
+- [x] Halaman "Kartu Stok" per produk (riwayat + saldo berjalan)
+- [x] Badge/alert low stock di list produk & dashboard
+- [x] Tabel `sales` & `sale_items`
+- [x] Form transaksi: cari produk (autocomplete), keranjang sementara, hitung subtotal/diskon/total
+- [x] Validasi qty ≤ stok tersedia (real-time saat input)
+- [x] Simpan transaksi → generate invoice_no, kurangi stok, insert movement `out`
+- [x] Halaman riwayat transaksi + detail transaksi
+- [x] Fitur batalkan transaksi → status `cancelled` + movement pengembalian stok
+- [x] Dashboard: hubungkan stat card & chart ke data nyata (omzet, jumlah transaksi, low stock)
 
 ## Phase 4 — Laporan
 - [ ] Laporan Penjualan (filter rentang tanggal, breakdown per produk/kategori)

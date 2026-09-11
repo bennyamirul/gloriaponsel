@@ -14,6 +14,30 @@ enum Role {
   admin
 }
 
+enum MovementType {
+  in
+  out
+  adjustment
+}
+
+enum ReferenceType {
+  purchase
+  sale
+  manual
+}
+
+enum PaymentMethod {
+  cash
+  transfer
+  edc
+  qris
+}
+
+enum SaleStatus {
+  completed
+  cancelled
+}
+
 model User {
   id           String   @id @default(uuid()) @db.Uuid
   name         String
@@ -23,6 +47,10 @@ model User {
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
+
+  stockMovements StockMovement[]
+  purchases      Purchase[]
+  sales          Sale[]
 
   @@map("users")
 }
@@ -50,12 +78,13 @@ model Brand {
 }
 
 model Supplier {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String     @id @default(uuid()) @db.Uuid
   name      String
   phone     String
   address   String?
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at")
+  purchases Purchase[]
 
   @@map("suppliers")
 }
@@ -66,6 +95,7 @@ model Customer {
   phone     String?
   address   String?
   createdAt DateTime @default(now()) @map("created_at")
+  sales     Sale[]
 
   @@map("customers")
 }
@@ -87,8 +117,95 @@ model Product {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  brand    Brand    @relation(fields: [brandId], references: [id], onDelete: Restrict)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  brand          Brand           @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  category       Category        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  stockMovements StockMovement[]
+  purchaseItems  PurchaseItem[]
+  saleItems      SaleItem[]
 
   @@map("products")
+}
+
+model StockMovement {
+  id            String        @id @default(uuid()) @db.Uuid
+  productId     String        @map("product_id") @db.Uuid
+  type          MovementType
+  quantity      Int // positif untuk in, negatif untuk out/adjustment turun
+  referenceType ReferenceType @map("reference_type")
+  referenceId   String?       @map("reference_id")
+  note          String?       @db.Text
+  createdById   String        @map("created_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  creator User    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+model Purchase {
+  id           String   @id @default(uuid()) @db.Uuid
+  invoiceNo    String   @map("invoice_no")
+  supplierId   String   @map("supplier_id") @db.Uuid
+  purchaseDate DateTime @default(now()) @map("purchase_date")
+  createdById  String   @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  creator  User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  items    PurchaseItem[]
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  purchaseId String  @map("purchase_id") @db.Uuid
+  productId  String  @map("product_id") @db.Uuid
+  qty        Int
+  unitCost   Decimal @map("unit_cost") @db.Decimal(15, 2)
+  subtotal   Decimal @db.Decimal(15, 2)
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@map("purchase_items")
+}
+
+model Sale {
+  id            String        @id @default(uuid()) @db.Uuid
+  invoiceNo     String        @unique @map("invoice_no")
+  customerId    String?       @map("customer_id") @db.Uuid
+  subtotal      Decimal       @db.Decimal(15, 2)
+  discount      Decimal       @default(0) @db.Decimal(15, 2)
+  total         Decimal       @db.Decimal(15, 2)
+  paymentMethod PaymentMethod @map("payment_method")
+  status        SaleStatus    @default(completed)
+  cashierId     String        @map("cashier_id") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  customer Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  cashier  User       @relation(fields: [cashierId], references: [id], onDelete: Restrict)
+  items    SaleItem[]
+
+  @@index([createdAt])
+  @@index([invoiceNo])
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  saleId    String  @map("sale_id") @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  qty       Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(15, 2)
+  unitCost  Decimal @map("unit_cost") @db.Decimal(15, 2) // snapshot harga modal saat transaksi
+  subtotal  Decimal @db.Decimal(15, 2)
+
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@map("sale_items")
 }

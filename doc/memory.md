@@ -91,6 +91,11 @@ Login hanya untuk 2 role: `admin` dan `super_admin`.
 | Phase 2 | Sanitasi `purchasePrice` di Server Action untuk non-super_admin | Mencegah staf kasir mengintip harga modal lewat Network tab browser |
 | Phase 2 | Desktop Table ↔ Mobile Card List per item | Kepatuhan mutlak design.md: tidak menggunakan tabel scroll horizontal |
 | Phase 2 | Form Produk panjang menggunakan shadcn `Sheet` Drawer | UX nyaman di mobile (slide-up full) dan desktop (slide-over panel) |
+| Phase 3 | ACID `db.$transaction` untuk Penjualan & Pergerakan Stok | Mencegah race condition stok dan desinkronisasi antara sale & inventory |
+| Phase 3 | Generator Invoice Otomatis `INV-YYYYMMDD-XXXX` | Standar penomoran faktur unik per hari yang rapi dan mudah dicari |
+| Phase 3 | Aturan Batalkan Transaksi: Kasir hanya transaksi hari ini, Owner kapan saja | Melindungi integritas audit histori penjualan toko |
+| Phase 3 | Kartu Stok dengan Saldo Berjalan (Running Balance) | Menampilkan debit (masuk), kredit (keluar), dan saldo sisa secara kronologis |
+| Phase 3 | Dashboard Terintegrasi Data Riil + Recharts AreaChart | Menampilkan omzet, transaksi, low stock alert, laba kotor role-restricted, dan tren 7 hari |
 
 ## 7. Status Dokumen Lain
 
