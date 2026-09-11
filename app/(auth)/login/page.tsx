@@ -213,8 +213,8 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-slate-950 p-4 relative overflow-hidden">
       {/* Background Decorative Blur */}
-      <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-indigo-600/20 blur-3xl" />
-      <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-purple-600/20 blur-3xl" />
+      <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-[#055B5A]/25 blur-3xl" />
+      <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-teal-800/20 blur-3xl" />
 
       <Suspense
         fallback={

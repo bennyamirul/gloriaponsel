@@ -13,67 +13,72 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: 243 75% 59%;
+    --primary: 179 90% 19%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 180 25% 96%;
+    --secondary-foreground: 180 60% 15%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 180 20% 96%;
+    --muted-foreground: 180 15% 45%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 178 45% 95%;
+    --accent-foreground: 179 90% 16%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 243 75% 59%;
+    --border: 180 15% 90%;
+    --input: 180 15% 90%;
+    --ring: 179 85% 25%;
 
     --radius: 0.75rem;
 
-    /* Custom tokens according to design.md */
-    --sidebar-bg: #111827;
+    /* Custom tokens according to Gloria Ponsel logoGP */
+    --sidebar-bg: #031e1d;
+    --sidebar-border: #083b3a;
+    --sidebar-hover: #073332;
     --success: #16A34A;
     --success-bg: #DCFCE7;
     --danger: #DC2626;
     --danger-bg: #FEE2E2;
     --warning: #D97706;
     --warning-bg: #FEF3C7;
-    --info-bg: #DBEAFE;
+    --info-bg: #E0F2FE;
     --purple-bg: #F3E8FF;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 180 30% 5%;
+    --foreground: 180 20% 98%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 180 30% 7%;
+    --card-foreground: 180 20% 98%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 180 30% 7%;
+    --popover-foreground: 180 20% 98%;
 
-    --primary: 243 75% 59%;
+    --primary: 179 80% 32%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 180 25% 15%;
+    --secondary-foreground: 180 20% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 180 25% 15%;
+    --muted-foreground: 180 15% 65%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 180 25% 15%;
+    --accent-foreground: 180 20% 98%;
 
     --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive-foreground: 180 20% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 243 75% 59%;
+    --border: 180 20% 18%;
+    --input: 180 20% 18%;
+    --ring: 179 80% 32%;
+    --sidebar-bg: #021716;
+    --sidebar-border: #052928;
+    --sidebar-hover: #073332;
   }
 }
 
