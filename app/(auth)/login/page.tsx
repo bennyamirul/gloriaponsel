@@ -27,8 +27,8 @@ import {
 import {
   LoginSchema,
   LoginFormValues,
-  loginAction,
-} from "@/lib/actions/auth.actions";
+} from "@/lib/validations/auth.schema";
+import { loginAction } from "@/lib/actions/auth.actions";
 
 function LoginForm() {
   const router = useRouter();

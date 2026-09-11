@@ -1,17 +1,12 @@
 "use server";
 
-import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { createSession, removeSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { LoginSchema, LoginFormValues } from "@/lib/validations/auth.schema";
 
-export const LoginSchema = z.object({
-  email: z.string().email("Format email tidak valid"),
-  password: z.string().min(1, "Kata sandi wajib diisi"),
-});
-
-export type LoginFormValues = z.infer<typeof LoginSchema>;
+export type { LoginFormValues };
 
 export interface ActionResult {
   success?: boolean;
