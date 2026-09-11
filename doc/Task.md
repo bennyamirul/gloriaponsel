@@ -69,13 +69,13 @@
 - [x] Pengaturan default `min_stock` global (opsional)
 
 ## Phase 6 — Polish, Responsif, & Testing
-- [ ] Review semua halaman di breakpoint mobile (bottom nav, drawer form, card list) — bandingkan dengan `design.md`
-- [ ] Loading state & skeleton di semua tabel/list
-- [ ] Empty state (mis. "Belum ada produk") di semua list
-- [ ] Toast konsisten untuk semua aksi sukses/gagal
-- [ ] Uji alur end-to-end: tambah produk → stok masuk → transaksi → cek laporan
-- [ ] Tambah index DB pada kolom yang sering difilter (`sku`, `sales.created_at`, `stock_movements.product_id`)
-- [ ] Audit ulang semua endpoint API — pastikan role guard konsisten (tidak hanya di UI)
+- [x] Review semua halaman di breakpoint mobile (bottom nav, drawer form, card list) — bandingkan dengan `design.md`
+- [x] Loading state & skeleton di semua tabel/list
+- [x] Empty state (mis. "Belum ada produk") di semua list
+- [x] Toast konsisten untuk semua aksi sukses/gagal
+- [x] Uji alur end-to-end: tambah produk → stok masuk → transaksi → cek laporan
+- [x] Tambah index DB pada kolom yang sering difilter (`sku`, `sales.created_at`, `stock_movements.product_id`)
+- [x] Audit ulang semua endpoint API — pastikan role guard konsisten (tidak hanya di UI)
 
 ## Phase 7 — Deployment
 - [ ] Setup hosting (mis. Vercel untuk Next.js)

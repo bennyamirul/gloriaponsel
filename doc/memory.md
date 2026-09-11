@@ -103,6 +103,10 @@ Login hanya untuk 2 role: `admin` dan `super_admin`.
 | Phase 5 | Proteksi Lockout Super Admin (Anti-Lockout) | Mencegah penonaktifan / demosi super_admin terakhir agar toko tidak kehilangan akses admin |
 | Phase 5 | Tabel `store_settings` Singleton Konfigurasi Toko | Menyimpan nama toko, telepon, alamat, logo, footer struk, dan default min_stock global |
 | Phase 5 | Pratinjau Struk Kasir Termal 58mm Real-time | Memudahkan pemilik toko melihat hasil perubahan nama & footer struk sebelum dicetak |
+| Phase 6 | Indeks Performa PostgreSQL pada Seluruh Model Transaksi | Mempercepat pencarian SKU, filter rentang tanggal, relasi foreign key, dan running balance |
+| Phase 6 | Global Shimmer Skeleton (`loading.tsx`) | Pengalaman transisi antar rute dashboard yang instan dan mulus tanpa layout shift |
+| Phase 6 | Audit Keamanan 2 Lapis (Edge Middleware & Server Actions) | Menjamin kepatuhan 100% matriks hak akses FRD untuk least privilege |
+| Phase 6 | Otomasi Pengujian Integrasi End-to-End (E2E) | Memverifikasi seluruh siklus produk, stok masuk, transaksi kasir, dan pengembalian stok |
 
 ## 7. Status Dokumen Lain
 

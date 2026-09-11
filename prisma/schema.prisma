@@ -123,6 +123,10 @@ model Product {
   purchaseItems  PurchaseItem[]
   saleItems      SaleItem[]
 
+  @@index([brandId])
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([stock])
   @@map("products")
 }
 
@@ -142,6 +146,7 @@ model StockMovement {
 
   @@index([productId])
   @@index([createdAt])
+  @@index([type])
   @@map("stock_movements")
 }
 
@@ -157,6 +162,8 @@ model Purchase {
   creator  User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
   items    PurchaseItem[]
 
+  @@index([supplierId])
+  @@index([createdAt])
   @@map("purchases")
 }
 
@@ -171,6 +178,8 @@ model PurchaseItem {
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
 
+  @@index([purchaseId])
+  @@index([productId])
   @@map("purchase_items")
 }
 
@@ -192,6 +201,8 @@ model Sale {
 
   @@index([createdAt])
   @@index([invoiceNo])
+  @@index([status])
+  @@index([cashierId])
   @@map("sales")
 }
 
@@ -207,6 +218,8 @@ model SaleItem {
   sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
 
+  @@index([saleId])
+  @@index([productId])
   @@map("sale_items")
 }
 
