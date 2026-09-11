@@ -87,6 +87,10 @@ Login hanya untuk 2 role: `admin` dan `super_admin`.
 | Phase 1 | Proteksi 2 lapis: Edge `middleware.ts` & Server Action `requireRole()` | Menjamin keamanan tidak hanya di level UI, rute `/users` & `/settings` terkunci untuk admin |
 | Phase 1 | Default seed: `owner@tokohp.com` & `kasir@tokohp.com` (`Password123!`) | Akun siap pakai untuk memvalidasi permission matrix operasional kasir vs owner |
 | Phase 1 | Dynamic Stat Card Laba Kotor vs Produk Aktif di Dashboard | Memenuhi aturan bisnis: harga modal & laba HANYA untuk role super_admin |
+| Phase 2 | 1 Baris Produk = 1 SKU unit dengan field `variant` opsional | Lebih simpel, cepat untuk scanning kasir dan kartu stok MVP |
+| Phase 2 | Sanitasi `purchasePrice` di Server Action untuk non-super_admin | Mencegah staf kasir mengintip harga modal lewat Network tab browser |
+| Phase 2 | Desktop Table ↔ Mobile Card List per item | Kepatuhan mutlak design.md: tidak menggunakan tabel scroll horizontal |
+| Phase 2 | Form Produk panjang menggunakan shadcn `Sheet` Drawer | UX nyaman di mobile (slide-up full) dan desktop (slide-over panel) |
 
 ## 7. Status Dokumen Lain
 

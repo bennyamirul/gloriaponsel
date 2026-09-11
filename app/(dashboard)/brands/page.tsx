@@ -1,8 +1,8 @@
-export default function BrandsPage() {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold tracking-tight text-foreground">Brand Handphone</h2>
-      <p className="text-sm text-muted-foreground">Kelola master brand (Samsung, Apple, Xiaomi, Oppo, Vivo, dll) (Phase 2).</p>
-    </div>
-  );
+import { getBrands } from "@/lib/actions/brand.actions";
+import { BrandsClient } from "@/components/master/brands-client";
+
+export default async function BrandsPage() {
+  const brands = await getBrands();
+
+  return <BrandsClient initialBrands={brands} />;
 }

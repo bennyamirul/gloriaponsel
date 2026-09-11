@@ -1,8 +1,22 @@
-export default function ProductsPage() {
+import { getProducts } from "@/lib/actions/product.actions";
+import { getCategories } from "@/lib/actions/category.actions";
+import { getBrands } from "@/lib/actions/brand.actions";
+import { ProductsClient } from "@/components/master/products-client";
+
+export default async function ProductsPage() {
+  const [productsData, categories, brands] = await Promise.all([
+    getProducts({ limit: 100 }),
+    getCategories(),
+    getBrands(),
+  ]);
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold tracking-tight text-foreground">Data Produk</h2>
-      <p className="text-sm text-muted-foreground">Katalog produk handphone & aksesoris (Phase 2).</p>
-    </div>
+    <ProductsClient
+      initialProducts={productsData.products}
+      total={productsData.total}
+      categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+      brands={brands.map((b) => ({ id: b.id, name: b.name }))}
+      isSuperAdmin={productsData.isSuperAdmin}
+    />
   );
 }

@@ -28,15 +28,15 @@
 - [x] Layout responsif: sidebar (desktop) ↔ bottom nav (mobile) sudah berfungsi switch
 
 ## Phase 2 — Master Data
-- [ ] Tabel & CRUD `categories` (list, tambah, edit, hapus/nonaktifkan)
-- [ ] Tabel & CRUD `brands`
-- [ ] Tabel & CRUD `suppliers`
-- [ ] Tabel & CRUD `customers`
-- [ ] Tabel `products` lengkap (relasi brand & category, upload gambar, harga modal/jual, stok awal, min_stock)
-- [ ] Form tambah/edit produk (validasi Zod: harga > 0, nama wajib, dll)
-- [ ] List produk: search, filter kategori/brand, pagination
-- [ ] Sembunyikan kolom harga modal untuk role `admin` (UI + API)
-- [ ] Versi mobile: form produk pakai `Sheet` full-screen, list produk pakai card list
+- [x] Tabel & CRUD `categories` (list, tambah, edit, hapus/nonaktifkan)
+- [x] Tabel & CRUD `brands`
+- [x] Tabel & CRUD `suppliers`
+- [x] Tabel & CRUD `customers`
+- [x] Tabel `products` lengkap (relasi brand & category, upload gambar, harga modal/jual, stok awal, min_stock)
+- [x] Form tambah/edit produk (validasi Zod: harga > 0, nama wajib, dll)
+- [x] List produk: search, filter kategori/brand, pagination
+- [x] Sembunyikan kolom harga modal untuk role `admin` (UI + API)
+- [x] Versi mobile: form produk pakai `Sheet` full-screen, list produk pakai card list
 
 ## Phase 3 — Stok & Transaksi Penjualan
 - [ ] Tabel `stock_movements`

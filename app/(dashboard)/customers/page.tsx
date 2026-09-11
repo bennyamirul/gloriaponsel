@@ -1,8 +1,8 @@
-export default function CustomersPage() {
-  return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold tracking-tight text-foreground">Data Pelanggan</h2>
-      <p className="text-sm text-muted-foreground">Pencatatan data pelanggan toko (Phase 2).</p>
-    </div>
-  );
+import { getCustomers } from "@/lib/actions/customer.actions";
+import { CustomersClient } from "@/components/master/customers-client";
+
+export default async function CustomersPage() {
+  const customers = await getCustomers();
+
+  return <CustomersClient initialCustomers={customers} />;
 }
