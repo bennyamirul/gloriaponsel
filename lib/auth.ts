@@ -1,6 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { db } from "@/lib/db";
 
 export type RoleType = "super_admin" | "admin";
 
@@ -69,7 +70,46 @@ export async function getCurrentUser(): Promise<UserSession | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifyToken(token);
+  const verified = await verifyToken(token);
+  if (!verified) return null;
+
+  try {
+    const dbUser = await db.user.findUnique({
+      where: { id: verified.id },
+      select: { id: true, name: true, email: true, role: true, isActive: true },
+    });
+
+    if (dbUser && dbUser.isActive) {
+      return {
+        id: dbUser.id,
+        name: dbUser.name,
+        email: dbUser.email,
+        role: dbUser.role as RoleType,
+      };
+    }
+
+    // Jika ID di cookie tidak ditemukan di DB (misal database di-reseed atau migrasi host),
+    // cocokkan berdasarkan email
+    if (verified.email) {
+      const dbUserByEmail = await db.user.findUnique({
+        where: { email: verified.email },
+        select: { id: true, name: true, email: true, role: true, isActive: true },
+      });
+
+      if (dbUserByEmail && dbUserByEmail.isActive) {
+        return {
+          id: dbUserByEmail.id,
+          name: dbUserByEmail.name,
+          email: dbUserByEmail.email,
+          role: dbUserByEmail.role as RoleType,
+        };
+      }
+    }
+
+    return null;
+  } catch {
+    return verified;
+  }
 }
 
 /**

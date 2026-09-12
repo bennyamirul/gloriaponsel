@@ -247,6 +247,34 @@ export async function cancelSale(saleId: string) {
       });
 
       // 2. Kembalikan stok produk dan catat movement in (pengembalian)
+      let actorId = user.id;
+      const actorExists = await tx.user.findUnique({
+        where: { id: actorId },
+        select: { id: true },
+      });
+
+      if (!actorExists) {
+        const userByEmail = user.email
+          ? await tx.user.findUnique({ where: { email: user.email }, select: { id: true } })
+          : null;
+
+        if (userByEmail) {
+          actorId = userByEmail.id;
+        } else {
+          const cashierUser = sale.cashierId
+            ? await tx.user.findUnique({ where: { id: sale.cashierId }, select: { id: true } })
+            : null;
+          if (cashierUser) {
+            actorId = cashierUser.id;
+          } else {
+            const firstAdmin = await tx.user.findFirst({ select: { id: true } });
+            if (firstAdmin) {
+              actorId = firstAdmin.id;
+            }
+          }
+        }
+      }
+
       for (const item of sale.items) {
         const prod = await tx.product.findUnique({ where: { id: item.productId } });
         await tx.product.update({
@@ -265,7 +293,7 @@ export async function cancelSale(saleId: string) {
             referenceType: "sale",
             referenceId: sale.id,
             note: `Pembatalan Transaksi Penjualan (Faktur: ${sale.invoiceNo})`,
-            createdById: user.id,
+            createdById: actorId,
           },
         });
       }
@@ -563,6 +591,35 @@ export async function returnWarrantyItem(input: {
     });
 
     // 3. Catat mutasi stok masuk (retur)
+    // Pastikan user ID valid dan ada di tabel users agar tidak melanggar foreign key
+    let actorId = session.id;
+    const actorExists = await tx.user.findUnique({
+      where: { id: actorId },
+      select: { id: true },
+    });
+
+    if (!actorExists) {
+      const userByEmail = session.email
+        ? await tx.user.findUnique({ where: { email: session.email }, select: { id: true } })
+        : null;
+
+      if (userByEmail) {
+        actorId = userByEmail.id;
+      } else {
+        const cashierUser = saleItem.sale.cashierId
+          ? await tx.user.findUnique({ where: { id: saleItem.sale.cashierId }, select: { id: true } })
+          : null;
+        if (cashierUser) {
+          actorId = cashierUser.id;
+        } else {
+          const firstAdmin = await tx.user.findFirst({ select: { id: true } });
+          if (firstAdmin) {
+            actorId = firstAdmin.id;
+          }
+        }
+      }
+    }
+
     await tx.stockMovement.create({
       data: {
         productId: saleItem.productId,
@@ -571,7 +628,7 @@ export async function returnWarrantyItem(input: {
         referenceType: "sale",
         referenceId: saleItem.saleId,
         note: `Retur Garansi [${saleItem.sale.invoiceNo}] - ${reason}`,
-        createdById: session.id,
+        createdById: actorId,
       },
     });
 
