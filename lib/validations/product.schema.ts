@@ -7,15 +7,29 @@ export const ProductSchema = z
       .min(2, "Nama produk minimal 2 karakter")
       .max(150, "Nama produk maksimal 150 karakter")
       .trim(),
-    brandId: z.string().uuid("Pilih brand yang valid"),
-    categoryId: z.string().uuid("Pilih kategori yang valid"),
+    productType: z.enum(["phone", "accessory"]).default("phone"),
+    imei: z
+      .string()
+      .trim()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() !== "" ? val.trim() : null)),
+    capacity: z.string().max(50).optional().nullable(),
+    color: z.string().max(50).optional().nullable(),
+    completeness: z.string().max(100).optional().nullable(),
+    retailSupplier: z.string().max(100).optional().nullable(),
+    entryDate: z.string().optional().nullable(),
+    brandName: z.string().max(100).optional().nullable(),
+    categoryName: z.string().max(100).optional().nullable(),
+    brandId: z.string().uuid().optional().nullable(),
+    categoryId: z.string().uuid().optional().nullable(),
     sku: z
       .string()
-      .min(3, "SKU minimal 3 karakter")
-      .max(50, "SKU maksimal 50 karakter")
-      .regex(/^[A-Za-z0-9-_]+$/, "SKU hanya boleh berisi huruf, angka, tanda hubung (-), dan garis bawah (_)")
-      .trim(),
-    variant: z.string().max(100, "Varian maksimal 100 karakter").optional().nullable(),
+      .max(60)
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() !== "" ? val.trim() : null)),
+    variant: z.string().max(100).optional().nullable(),
     purchasePrice: z.coerce
       .number({ invalid_type_error: "Harga modal harus berupa angka" })
       .min(0, "Harga modal tidak boleh negatif"),
@@ -26,16 +40,29 @@ export const ProductSchema = z
       .number({ invalid_type_error: "Stok harus berupa angka" })
       .int("Stok harus bilangan bulat")
       .min(0, "Stok tidak boleh negatif")
-      .default(0),
+      .default(1),
     minStock: z.coerce
       .number({ invalid_type_error: "Batas minimum stok harus berupa angka" })
       .int("Batas minimum stok harus bilangan bulat")
       .min(0, "Batas minimum stok tidak boleh negatif")
       .default(5),
     imageUrl: z.string().optional().nullable(),
-    description: z.string().max(1000, "Deskripsi maksimal 1000 karakter").optional().nullable(),
+    description: z.string().max(1000).optional().nullable(),
+    status: z.enum(["available", "retur", "sold"]).default("available").optional(),
     isActive: z.boolean().default(true),
   })
+  .refine(
+    (data) => {
+      if (data.productType === "phone" && !data.imei) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Nomor IMEI wajib diisi untuk produk handphone",
+      path: ["imei"],
+    }
+  )
   .refine(
     (data) => data.sellingPrice >= data.purchasePrice,
     {

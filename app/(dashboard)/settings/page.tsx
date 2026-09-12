@@ -15,7 +15,7 @@ export default async function SettingsPage() {
           Pengaturan Toko & Konfigurasi
         </h2>
         <p className="text-sm text-muted-foreground">
-          Kelola informasi nama toko, alamat, logo, catatan footer struk kasir, dan ambang batas stok minimum default.
+          Kelola informasi nama toko, alamat, logo, dan catatan footer struk kasir.
         </p>
       </div>
 

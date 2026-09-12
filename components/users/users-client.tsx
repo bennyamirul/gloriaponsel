@@ -12,8 +12,14 @@ import {
   MoreVertical,
   CheckCircle2,
   AlertCircle,
+  Eye,
+  Clock,
+  Calendar,
+  Receipt,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatRupiah } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +37,8 @@ import {
   toggleUserStatus,
   updateUserRole,
   resetUserPassword,
+  getUserDetailWithSales,
+  UserDetailWithSales,
 } from "@/lib/actions/user.actions";
 
 interface UserItem {
@@ -58,6 +66,29 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
   const [roleUser, setRoleUser] = useState<UserItem | null>(null);
   const [passwordUser, setPasswordUser] = useState<UserItem | null>(null);
   const [toggleUser, setToggleUser] = useState<UserItem | null>(null);
+
+  // User Detail & Sales Stats Modal State
+  const [detailUser, setDetailUser] = useState<UserItem | null>(null);
+  const [detailData, setDetailData] = useState<UserDetailWithSales | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+
+  const handleOpenUserDetail = async (user: UserItem) => {
+    setDetailUser(user);
+    setDetailData(null);
+    setIsLoadingDetail(true);
+    try {
+      const res = await getUserDetailWithSales(user.id);
+      if (res.success && res.data) {
+        setDetailData(res.data);
+      } else {
+        toast.error(res.error || "Gagal memuat detail pengguna.");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Terjadi kesalahan saat memuat detail pengguna.");
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
 
   // Form states
   const [newName, setNewName] = useState("");
@@ -195,13 +226,9 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
 
   return (
     <div className="space-y-6">
-      {/* Action Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg font-bold text-foreground">Daftar Pengguna Sistem</h3>
-          <p className="text-xs text-muted-foreground">
-            Kelola staf kasir dan super admin yang memiliki akses masuk ke dashboard.
-          </p>
+          <h3 className="text-xl font-bold tracking-tight text-foreground">Manajemen User</h3>
         </div>
         <Button
           onClick={() => setIsAddOpen(true)}
@@ -255,12 +282,22 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                     {filteredUsers.map((u) => (
                       <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                         <td className="py-3 font-semibold text-foreground">
-                          {u.name}
-                          {u.id === currentUserId && (
-                            <span className="ml-2 text-[10px] text-indigo-600 font-normal">
-                              (Anda)
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenUserDetail(u)}
+                              className="text-left font-semibold text-foreground hover:text-indigo-600 hover:underline transition-colors focus:outline-none flex items-center gap-1.5 group/name"
+                              title="Klik untuk melihat detail & rekap transaksi"
+                            >
+                              <span>{u.name}</span>
+                              <Eye className="h-3.5 w-3.5 text-muted-foreground group-hover/name:text-indigo-600 transition-colors opacity-70 group-hover/name:opacity-100" />
+                            </button>
+                            {u.id === currentUserId && (
+                              <span className="text-[10px] text-indigo-600 font-normal">
+                                (Anda)
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 font-mono text-muted-foreground">{u.email}</td>
                         <td className="py-3 text-center">
@@ -299,6 +336,16 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                         </td>
                         <td className="py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenUserDetail(u)}
+                              className="h-7 px-2 text-[11px] text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
+                              title="Lihat Detail & Rekap Transaksi"
+                            >
+                              <Eye className="h-3.5 w-3.5 mr-1" />
+                              Detail
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -369,14 +416,19 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                           {u.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-foreground">
-                            {u.name}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenUserDetail(u)}
+                            className="text-left text-xs font-bold text-foreground hover:text-indigo-600 hover:underline transition-colors focus:outline-none flex items-center gap-1.5"
+                          >
+                            <span>{u.name}</span>
+                            <Eye className="h-3 w-3 text-muted-foreground" />
                             {u.id === currentUserId && (
                               <span className="ml-1 text-[10px] text-indigo-600 font-normal">
                                 (Anda)
                               </span>
                             )}
-                          </p>
+                          </button>
                           <p className="text-[11px] font-mono text-muted-foreground">{u.email}</p>
                         </div>
                       </div>
@@ -407,6 +459,15 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                     </div>
 
                     <div className="flex items-center justify-end gap-1 pt-2 border-t border-border/60">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenUserDetail(u)}
+                        className="h-7 px-2 text-[10px] text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        Detail
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -668,6 +729,271 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                 : toggleUser?.isActive
                 ? "Ya, Nonaktifkan"
                 : "Ya, Aktifkan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 5. MODAL DETAIL PENGGUNA & REKAP TRANSAKSI */}
+      <Dialog
+        open={!!detailUser}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailUser(null);
+            setDetailData(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+          <DialogHeader className="border-b border-border pb-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white font-bold text-base shadow-sm">
+                  {detailUser?.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-bold text-foreground flex items-center gap-2">
+                    <span>{detailUser?.name}</span>
+                    {detailUser?.id === currentUserId && (
+                      <Badge variant="outline" className="text-[10px] text-indigo-600 border-indigo-200">
+                        Anda
+                      </Badge>
+                    )}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs font-mono text-muted-foreground">
+                    {detailUser?.email}
+                  </DialogDescription>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5">
+                <Badge
+                  variant="outline"
+                  className={
+                    detailUser?.role === "super_admin"
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-800 text-[11px] font-bold"
+                      : "border-slate-300 bg-slate-100 text-slate-700 text-[11px] font-medium"
+                  }
+                >
+                  {detailUser?.role === "super_admin" ? "Super Admin (Owner)" : "Admin Kasir"}
+                </Badge>
+                <Badge
+                  variant="secondary"
+                  className={
+                    detailUser?.isActive
+                      ? "bg-emerald-100 text-emerald-800 text-[10px]"
+                      : "bg-rose-100 text-rose-800 text-[10px]"
+                  }
+                >
+                  {detailUser?.isActive ? "Akun Aktif" : "Akun Nonaktif"}
+                </Badge>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {isLoadingDetail ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+              <Loader2 className="h-7 w-7 animate-spin text-indigo-600" />
+              <p className="text-xs">Memuat rekapitulasi data & transaksi...</p>
+            </div>
+          ) : detailData ? (
+            <div className="space-y-6 pt-2">
+              {/* Ringkasan Statistik 3 Card */}
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">
+                  Ringkasan Kinerja Penjualan
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Card 1: Hari Ini */}
+                  <div className="p-3.5 rounded-xl border border-border bg-card shadow-2xs space-y-1">
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span className="text-[11px] font-medium">Transaksi Hari Ini</span>
+                      <Clock className="h-4 w-4 text-emerald-600" />
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold font-mono text-foreground">
+                        {detailData.stats.todayCount}
+                      </span>
+                      <span className="text-xs text-muted-foreground">transaksi</span>
+                    </div>
+                    <p className="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                      {formatRupiah(detailData.stats.todayTotal)}
+                    </p>
+                  </div>
+
+                  {/* Card 2: Bulan Ini */}
+                  <div className="p-3.5 rounded-xl border border-border bg-card shadow-2xs space-y-1">
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span className="text-[11px] font-medium">Transaksi Bulan Ini</span>
+                      <Calendar className="h-4 w-4 text-indigo-600" />
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold font-mono text-foreground">
+                        {detailData.stats.monthCount}
+                      </span>
+                      <span className="text-xs text-muted-foreground">transaksi</span>
+                    </div>
+                    <p className="text-xs font-mono font-semibold text-indigo-600 dark:text-indigo-400">
+                      {formatRupiah(detailData.stats.monthTotal)}
+                    </p>
+                  </div>
+
+                  {/* Card 3: Total Seluruh Waktu */}
+                  <div className="p-3.5 rounded-xl border border-border bg-card shadow-2xs space-y-1">
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span className="text-[11px] font-medium">Total Keseluruhan</span>
+                      <Receipt className="h-4 w-4 text-slate-600" />
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold font-mono text-foreground">
+                        {detailData.stats.allTimeCount}
+                      </span>
+                      <span className="text-xs text-muted-foreground">transaksi</span>
+                    </div>
+                    <p className="text-xs font-mono font-semibold text-foreground">
+                      {formatRupiah(detailData.stats.allTimeTotal)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabel Transaksi Terakhir */}
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Transaksi Terakhir ({detailData.recentSales.length})
+                  </h4>
+                  <span className="text-[11px] text-muted-foreground">5 transaksi terakhir</span>
+                </div>
+
+                {detailData.recentSales.length === 0 ? (
+                  <div className="p-8 rounded-xl border border-dashed border-border text-center text-xs text-muted-foreground">
+                    Belum ada transaksi penjualan yang diproses oleh pengguna ini.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-border">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-muted/50 text-muted-foreground border-b border-border">
+                        <tr>
+                          <th className="py-2.5 px-3 font-semibold">No. Faktur</th>
+                          <th className="py-2.5 px-3 font-semibold">Waktu</th>
+                          <th className="py-2.5 px-3 font-semibold">Pelanggan</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Item</th>
+                          <th className="py-2.5 px-3 font-semibold text-right">Total</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Metode</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {detailData.recentSales.map((sale) => (
+                          <tr key={sale.id} className="hover:bg-muted/20 transition-colors">
+                            <td className="py-2.5 px-3 font-mono font-bold text-foreground">
+                              {sale.invoiceNo}
+                            </td>
+                            <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
+                              {new Date(sale.createdAt).toLocaleDateString("id-ID", {
+                                day: "numeric",
+                                month: "short",
+                              })}{" "}
+                              <span className="text-[10px]">
+                                {new Date(sale.createdAt).toLocaleTimeString("id-ID", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-foreground">{sale.customerName}</td>
+                            <td className="py-2.5 px-3 text-center font-mono text-muted-foreground">
+                              {sale.itemCount} unit
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                              {formatRupiah(sale.total)}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <Badge variant="outline" className="text-[10px] uppercase font-mono">
+                                {sale.paymentMethod}
+                              </Badge>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <Badge
+                                variant="secondary"
+                                className={
+                                  sale.status === "completed"
+                                    ? "bg-emerald-100 text-emerald-800 text-[10px]"
+                                    : "bg-rose-100 text-rose-800 text-[10px]"
+                                }
+                              >
+                                {sale.status === "completed" ? "Selesai" : "Batal"}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Info Tambahan & Tombol Aksi */}
+              <div className="pt-2 border-t border-border flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                <div>
+                  <span>Terdaftar: </span>
+                  <span className="font-medium text-foreground">
+                    {new Date(detailData.user.createdAt).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const target = detailUser;
+                      setDetailUser(null);
+                      if (target) {
+                        setRoleUser(target);
+                        setSelectedRoleTarget(target.role);
+                      }
+                    }}
+                    className="h-8 text-xs"
+                  >
+                    <Shield className="h-3.5 w-3.5 mr-1" />
+                    Ubah Role
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const target = detailUser;
+                      setDetailUser(null);
+                      if (target) {
+                        setPasswordUser(target);
+                        setResetPasswordInput("");
+                      }
+                    }}
+                    className="h-8 text-xs"
+                  >
+                    <KeyRound className="h-3.5 w-3.5 mr-1 text-amber-600" />
+                    Reset Password
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter className="pt-2 border-t border-border">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDetailUser(null);
+                setDetailData(null);
+              }}
+            >
+              Tutup
             </Button>
           </DialogFooter>
         </DialogContent>

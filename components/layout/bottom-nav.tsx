@@ -16,9 +16,11 @@ import {
   Truck,
   UserCheck,
   Users,
+  User,
   Settings,
   LogOut,
   ChevronRight,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -36,22 +38,27 @@ interface BottomNavProps {
 export function BottomNav({ userRole = "super_admin" }: BottomNavProps) {
   const pathname = usePathname();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const isSuperAdmin = userRole === "super_admin";
 
-  const mainTabs = [
-    { label: "Home", href: "/dashboard", icon: LayoutDashboard },
-    { label: "Produk", href: "/products", icon: Package },
-    { label: "Kasir", href: "/sales", icon: ShoppingCart },
-    { label: "Laporan", href: "/reports", icon: BarChart3 },
-  ];
+  const mainTabs = isSuperAdmin
+    ? [
+        { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+        { label: "Produk", href: "/products", icon: Package },
+        { label: "Kasir", href: "/sales", icon: ShoppingCart },
+        { label: "Laporan", href: "/reports", icon: BarChart3 },
+      ]
+    : [
+        { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+        { label: "Transaksi", href: "/sales", icon: ShoppingCart },
+        { label: "Manajemen Unit", href: "/stock", icon: Boxes },
+      ];
 
   const drawerMenuItems = [
-    { label: "Manajemen Stok", href: "/stock", icon: Boxes },
-    { label: "Kategori Produk", href: "/categories", icon: Layers },
-    { label: "Brand Handphone", href: "/brands", icon: Tag },
-    { label: "Data Supplier", href: "/suppliers", icon: Truck },
-    { label: "Data Pelanggan", href: "/customers", icon: UserCheck },
-    ...(userRole === "super_admin"
+    { label: "Pengaturan Profil", href: "/profile", icon: User },
+    ...(isSuperAdmin
       ? [
+          { label: "Manajemen Stok", href: "/stock", icon: Boxes },
+          { label: "Cetak Barcode SKU", href: "/products/barcode", icon: Printer },
           { label: "Manajemen User (Admin)", href: "/users", icon: Users },
           { label: "Pengaturan Toko", href: "/settings", icon: Settings },
         ]

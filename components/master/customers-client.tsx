@@ -134,15 +134,11 @@ export function CustomersClient({ initialCustomers }: { initialCustomers: Custom
 
   return (
     <div className="space-y-6">
-      {/* Header & Action Button */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">
             Data Pelanggan
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Data kontak pelanggan untuk histori transaksi kasir toko.
-          </p>
         </div>
         <Button
           onClick={handleOpenAdd}

@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getCategories } from "@/lib/actions/category.actions";
 import { getBrands } from "@/lib/actions/brand.actions";
@@ -13,7 +14,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ReportsPage() {
   const user = await getCurrentUser();
-  const isSuperAdmin = user?.role === "super_admin";
+  if (!user || user.role !== "super_admin") {
+    redirect("/dashboard?access_denied=true");
+  }
 
   const [categories, brands, salesReport, stockReport, bestSellers, profitReport] =
     await Promise.all([
@@ -22,7 +25,7 @@ export default async function ReportsPage() {
       getSalesReport(),
       getStockReport(),
       getBestSellersReport(),
-      isSuperAdmin ? getProfitReport() : Promise.resolve(null),
+      getProfitReport(),
     ]);
 
   return (

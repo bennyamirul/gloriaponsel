@@ -54,7 +54,7 @@ export async function createSale(values: CreateSaleFormValues) {
     return { error: validated.error.errors[0]?.message || "Data transaksi tidak valid" };
   }
 
-  const { customerId, paymentMethod, discount, items } = validated.data;
+  const { customerId, customerName, paymentMethod, discount, additionalFee = 0, warrantyDays = 0, items } = validated.data;
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -99,16 +99,44 @@ export async function createSale(values: CreateSaleFormValues) {
         throw new Error("Jumlah diskon tidak boleh melebihi subtotal transaksi.");
       }
 
-      const total = calculatedSubtotal - discount;
+      // Tentukan customerId (jika diinput nama manual, cari atau buat otomatis)
+      let finalCustomerId = customerId || null;
+      if (!finalCustomerId && customerName && customerName.trim()) {
+        const trimmed = customerName.trim();
+        if (
+          trimmed.toLowerCase() !== "pelanggan umum" &&
+          trimmed.toLowerCase() !== "umum" &&
+          trimmed.toLowerCase() !== "walk-in"
+        ) {
+          let existingCust = await tx.customer.findFirst({
+            where: { name: { equals: trimmed, mode: "insensitive" } },
+          });
+          if (!existingCust) {
+            existingCust = await tx.customer.create({
+              data: { name: trimmed },
+            });
+          }
+          finalCustomerId = existingCust.id;
+        }
+      }
+
+      const total = Math.max(0, calculatedSubtotal - discount + additionalFee);
       const invoiceNo = await generateInvoiceNumber();
+
+      const now = new Date();
+      const warrantyExpiry =
+        warrantyDays > 0 ? new Date(now.getTime() + warrantyDays * 24 * 60 * 60 * 1000) : null;
 
       // 2. Simpan record transaksi Sale
       const sale = await tx.sale.create({
         data: {
           invoiceNo,
-          customerId: customerId || null,
+          customerId: finalCustomerId,
           subtotal: calculatedSubtotal,
           discount,
+          additionalFee,
+          warrantyDays,
+          warrantyExpiry,
           total,
           paymentMethod,
           status: "completed",
@@ -128,14 +156,17 @@ export async function createSale(values: CreateSaleFormValues) {
             unitPrice: snap.unitPrice,
             unitCost: snap.product.purchasePrice, // Snapshot harga modal saat transaksi
             subtotal: itemSubtotal,
+            warrantyDays,
+            warrantyExpiry,
           },
         });
 
-        // Kurangi stok produk
+        // Kurangi stok produk & update status untuk unit hp
         await tx.product.update({
           where: { id: snap.product.id },
           data: {
             stock: { decrement: snap.qty },
+            ...(snap.product.productType === "phone" ? { status: "sold" } : {}),
           },
         });
 
@@ -217,10 +248,12 @@ export async function cancelSale(saleId: string) {
 
       // 2. Kembalikan stok produk dan catat movement in (pengembalian)
       for (const item of sale.items) {
+        const prod = await tx.product.findUnique({ where: { id: item.productId } });
         await tx.product.update({
           where: { id: item.productId },
           data: {
             stock: { increment: item.qty },
+            ...(prod?.productType === "phone" ? { status: "available" } : {}),
           },
         });
 
@@ -296,7 +329,17 @@ export async function getSales(params?: SalesQueryParams) {
         cashier: { select: { id: true, name: true } },
         items: {
           include: {
-            product: { select: { name: true, sku: true } },
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sku: true,
+                imei: true,
+                capacity: true,
+                color: true,
+                variant: true,
+              },
+            },
           },
         },
       },
@@ -313,6 +356,9 @@ export async function getSales(params?: SalesQueryParams) {
       cashierId: s.cashierId,
       subtotal: Number(s.subtotal),
       discount: Number(s.discount),
+      additionalFee: Number(s.additionalFee || 0),
+      warrantyDays: s.warrantyDays,
+      warrantyExpiry: s.warrantyExpiry ? s.warrantyExpiry.toISOString() : null,
       total: Number(s.total),
       paymentMethod: s.paymentMethod,
       status: s.status,
@@ -322,6 +368,10 @@ export async function getSales(params?: SalesQueryParams) {
         id: it.id,
         productName: it.product.name,
         productSku: it.product.sku,
+        productImei: it.product.imei,
+        capacity: it.product.capacity,
+        color: it.product.color,
+        variant: it.product.variant,
         qty: it.qty,
         unitPrice: Number(it.unitPrice),
         subtotal: Number(it.subtotal),
@@ -369,6 +419,9 @@ export async function getSaleDetail(saleId: string) {
       cashierId: sale.cashierId,
       subtotal: Number(sale.subtotal),
       discount: Number(sale.discount),
+      additionalFee: Number(sale.additionalFee || 0),
+      warrantyDays: sale.warrantyDays,
+      warrantyExpiry: sale.warrantyExpiry ? sale.warrantyExpiry.toISOString() : null,
       total: Number(sale.total),
       paymentMethod: sale.paymentMethod,
       status: sale.status,
@@ -385,5 +438,314 @@ export async function getSaleDetail(saleId: string) {
     },
     currentUserId: user.id,
     currentUserRole: user.role,
+  };
+}
+
+export interface ReadyItemData {
+  id: string;
+  name: string;
+  brandName: string;
+  categoryName: string;
+  sku: string;
+  imei: string | null;
+  productType: string;
+  capacity: string | null;
+  color: string | null;
+  completeness: string | null;
+  retailSupplier: string | null;
+  status: string;
+  purchasePrice: number;
+  sellingPrice: number;
+  stock: number;
+  entryDate: string;
+  createdAt: string;
+}
+
+export interface WarrantyItemData {
+  id: string;
+  saleId: string;
+  invoiceNo: string;
+  saleDate: string;
+  productId: string;
+  productName: string;
+  imei: string | null;
+  sku: string;
+  productType: string;
+  capacity: string | null;
+  color: string | null;
+  qty: number;
+  unitPrice: number;
+  subtotal: number;
+  customerName: string;
+  customerPhone: string | null;
+  cashierName: string;
+  warrantyDays: number;
+  warrantyExpiry: string;
+}
+
+export interface SoldItemData {
+  id: string;
+  saleId: string;
+  invoiceNo: string;
+  saleDate: string;
+  productId: string;
+  productName: string;
+  imei: string | null;
+  sku: string;
+  productType: string;
+  capacity: string | null;
+  color: string | null;
+  qty: number;
+  unitPrice: number;
+  subtotal: number;
+  customerName: string;
+  customerPhone: string | null;
+  cashierName: string;
+  warrantyDays: number;
+  warrantyExpiry: string | null;
+  paymentMethod: string;
+  statusNote: string;
+  isReturned: boolean;
+  returnReason: string | null;
+  returnedAt: string | null;
+}
+
+/**
+ * Mengembalikan barang dalam masa garansi ke stok toko dengan status "retur".
+ */
+export async function returnWarrantyItem(input: {
+  saleItemId: string;
+  returnReason?: string;
+}) {
+  const session = await requireAuth();
+
+  return await db.$transaction(async (tx) => {
+    const saleItem = await tx.saleItem.findUnique({
+      where: { id: input.saleItemId },
+      include: {
+        product: true,
+        sale: {
+          include: {
+            customer: true,
+          },
+        },
+      },
+    });
+
+    if (!saleItem) {
+      throw new Error("Item transaksi tidak ditemukan.");
+    }
+
+    if (saleItem.isReturned) {
+      throw new Error("Item ini sudah pernah diretur sebelumnya.");
+    }
+
+    const reason = input.returnReason?.trim() || "Klaim Garansi Toko";
+    const now = new Date();
+
+    // 1. Update Product: kembalikan ke stok dengan status 'retur'
+    await tx.product.update({
+      where: { id: saleItem.productId },
+      data: {
+        stock: { increment: saleItem.qty },
+        status: "retur",
+      },
+    });
+
+    // 2. Tandai item penjualan sebagai diretur
+    await tx.saleItem.update({
+      where: { id: input.saleItemId },
+      data: {
+        isReturned: true,
+        returnReason: reason,
+        returnedAt: now,
+      },
+    });
+
+    // 3. Catat mutasi stok masuk (retur)
+    await tx.stockMovement.create({
+      data: {
+        productId: saleItem.productId,
+        type: "in",
+        quantity: saleItem.qty,
+        referenceType: "sale",
+        referenceId: saleItem.saleId,
+        note: `Retur Garansi [${saleItem.sale.invoiceNo}] - ${reason}`,
+        createdById: session.id,
+      },
+    });
+
+    revalidatePath("/stock");
+    revalidatePath("/sales");
+    revalidatePath("/products");
+
+    return {
+      success: true,
+      message: `Unit "${saleItem.product.name}" berhasil dikembalikan ke stok dengan status Retur.`,
+    };
+  });
+}
+
+/**
+ * Mengambil data siklus hidup unit barang untuk Riwayat Penjualan:
+ * 1. Ready: Barang ready stok (available atau retur, stock > 0)
+ * 2. Garansi: Barang terjual dengan masa garansi aktif (warrantyDays > 0, warrantyExpiry > now, belum diretur)
+ * 3. Sold: Barang terjual yang garansinya telah habis, tanpa garansi, atau yang telah diretur ke stok
+ */
+export async function getSalesLifecycleData() {
+  await requireAuth();
+
+  const now = new Date();
+
+  const [readyProducts, activeWarrantyItems, soldItems] = await Promise.all([
+    // 1. Ready: available / retur products with stock > 0
+    db.product.findMany({
+      where: {
+        status: { in: ["available", "retur"] },
+        stock: { gt: 0 },
+        isActive: true,
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        brand: { select: { name: true } },
+        category: { select: { name: true } },
+      },
+    }),
+
+    // 2. Garansi: completed sales where warrantyDays > 0, warrantyExpiry > now, dan isReturned = false
+    db.saleItem.findMany({
+      where: {
+        isReturned: false,
+        sale: {
+          status: "completed",
+          warrantyDays: { gt: 0 },
+          warrantyExpiry: { gt: now },
+        },
+      },
+      orderBy: { sale: { warrantyExpiry: "asc" } },
+      include: {
+        product: true,
+        sale: {
+          include: {
+            customer: true,
+            cashier: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
+
+    // 3. Sold: completed sales where warranty has expired OR warrantyDays === 0, dan belum diretur (isReturned = false)
+    db.saleItem.findMany({
+      where: {
+        isReturned: false,
+        sale: {
+          status: "completed",
+          OR: [
+            { warrantyDays: 0 },
+            { warrantyExpiry: { lte: now } },
+            { warrantyExpiry: null },
+          ],
+        },
+      },
+      orderBy: { sale: { createdAt: "desc" } },
+      take: 200,
+      include: {
+        product: true,
+        sale: {
+          include: {
+            customer: true,
+            cashier: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const readyItems: ReadyItemData[] = readyProducts.map((p) => ({
+    id: p.id,
+    name: p.name,
+    brandName: p.brand?.name || p.brandName || "-",
+    categoryName: p.category?.name || p.categoryName || "-",
+    sku: p.sku,
+    imei: p.imei,
+    productType: p.productType,
+    capacity: p.capacity,
+    color: p.color,
+    completeness: p.completeness,
+    retailSupplier: p.retailSupplier,
+    status: p.status,
+    purchasePrice: Number(p.purchasePrice),
+    sellingPrice: Number(p.sellingPrice),
+    stock: p.stock,
+    entryDate: p.entryDate.toISOString(),
+    createdAt: p.createdAt.toISOString(),
+  }));
+
+  const warrantyItems: WarrantyItemData[] = activeWarrantyItems.map((it) => {
+    const days = it.warrantyDays || it.sale.warrantyDays || 0;
+    const expiry = it.warrantyExpiry || it.sale.warrantyExpiry;
+    return {
+      id: it.id,
+      saleId: it.saleId,
+      invoiceNo: it.sale.invoiceNo,
+      saleDate: it.sale.createdAt.toISOString(),
+      productId: it.productId,
+      productName: it.product.name,
+      imei: it.product.imei,
+      sku: it.product.sku,
+      productType: it.product.productType,
+      capacity: it.product.capacity,
+      color: it.product.color,
+      qty: it.qty,
+      unitPrice: Number(it.unitPrice),
+      subtotal: Number(it.subtotal),
+      customerName: it.sale.customer?.name || "Pelanggan Umum",
+      customerPhone: it.sale.customer?.phone || null,
+      cashierName: it.sale.cashier.name,
+      warrantyDays: days,
+      warrantyExpiry: expiry ? expiry.toISOString() : new Date().toISOString(),
+    };
+  });
+
+  const soldItemsList: SoldItemData[] = soldItems.map((it) => {
+    const days = it.warrantyDays || it.sale.warrantyDays || 0;
+    const expiry = it.warrantyExpiry || it.sale.warrantyExpiry;
+    return {
+      id: it.id,
+      saleId: it.saleId,
+      invoiceNo: it.sale.invoiceNo,
+      saleDate: it.sale.createdAt.toISOString(),
+      productId: it.productId,
+      productName: it.product.name,
+      imei: it.product.imei,
+      sku: it.product.sku,
+      productType: it.product.productType,
+      capacity: it.product.capacity,
+      color: it.product.color,
+      qty: it.qty,
+      unitPrice: Number(it.unitPrice),
+      subtotal: Number(it.subtotal),
+      customerName: it.sale.customer?.name || "Pelanggan Umum",
+      customerPhone: it.sale.customer?.phone || null,
+      cashierName: it.sale.cashier.name,
+      warrantyDays: days,
+      warrantyExpiry: expiry ? expiry.toISOString() : null,
+      paymentMethod: it.sale.paymentMethod,
+      statusNote: days > 0 ? "Garansi Selesai" : "Tanpa Garansi",
+      isReturned: false,
+      returnReason: null,
+      returnedAt: null,
+    };
+  });
+
+  return {
+    readyItems,
+    warrantyItems,
+    soldItems: soldItemsList,
+    summary: {
+      readyCount: readyItems.length,
+      warrantyCount: warrantyItems.length,
+      soldCount: soldItemsList.length,
+    },
   };
 }

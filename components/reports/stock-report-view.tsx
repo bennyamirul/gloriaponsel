@@ -146,12 +146,7 @@ export function StockReportView({
       {/* Action Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-base font-bold text-foreground">Laporan Stok & Valuasi Inventaris</h3>
-          <p className="text-xs text-muted-foreground">
-            {isSuperAdmin
-              ? "Valuasi total aset stok berdasarkan harga modal (HPP) & potensi nilai jual."
-              : "Ringkasan ketersediaan unit fisik stok produk dan estimasi nilai jual."}
-          </p>
+          <h3 className="text-base font-bold text-foreground">Laporan Stok & Valuasi</h3>
         </div>
         <div className="flex items-center gap-2">
           <Button

@@ -198,3 +198,128 @@ export async function resetUserPassword(userId: string, newPassword: string) {
     return { error: error.message || "Gagal mereset password pengguna." };
   }
 }
+
+export interface UserDetailWithSales {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: "super_admin" | "admin";
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+  };
+  stats: {
+    todayCount: number;
+    todayTotal: number;
+    monthCount: number;
+    monthTotal: number;
+    allTimeCount: number;
+    allTimeTotal: number;
+  };
+  recentSales: Array<{
+    id: string;
+    invoiceNo: string;
+    customerName: string;
+    total: number;
+    paymentMethod: string;
+    status: string;
+    createdAt: string;
+    itemCount: number;
+  }>;
+}
+
+/**
+ * Mengambil detail profil user serta riwayat transaksi (Hari Ini, Bulan Ini, Terakhir)
+ */
+export async function getUserDetailWithSales(userId: string) {
+  await requireRole(["super_admin"]);
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+
+  if (!user) {
+    return { error: "Pengguna tidak ditemukan." };
+  }
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+
+  const [todaySales, monthSales, allTimeSales, recentSalesRaw] = await Promise.all([
+    db.sale.findMany({
+      where: {
+        cashierId: userId,
+        status: "completed",
+        createdAt: { gte: startOfToday },
+      },
+      select: { total: true },
+    }),
+    db.sale.findMany({
+      where: {
+        cashierId: userId,
+        status: "completed",
+        createdAt: { gte: startOfMonth },
+      },
+      select: { total: true },
+    }),
+    db.sale.findMany({
+      where: {
+        cashierId: userId,
+        status: "completed",
+      },
+      select: { total: true },
+    }),
+    db.sale.findMany({
+      where: { cashierId: userId },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      include: {
+        customer: { select: { name: true } },
+        items: true,
+      },
+    }),
+  ]);
+
+  const recentSales = recentSalesRaw.map((s) => ({
+    id: s.id,
+    invoiceNo: s.invoiceNo,
+    customerName: s.customer?.name || "Pelanggan Umum",
+    total: Number(s.total),
+    paymentMethod: s.paymentMethod,
+    status: s.status,
+    createdAt: s.createdAt.toISOString(),
+    itemCount: s.items.reduce((acc, it) => acc + it.qty, 0),
+  }));
+
+  return {
+    success: true,
+    data: {
+      user: {
+        ...user,
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString(),
+      },
+      stats: {
+        todayCount: todaySales.length,
+        todayTotal: todaySales.reduce((acc, s) => acc + Number(s.total), 0),
+        monthCount: monthSales.length,
+        monthTotal: monthSales.reduce((acc, s) => acc + Number(s.total), 0),
+        allTimeCount: allTimeSales.length,
+        allTimeTotal: allTimeSales.reduce((acc, s) => acc + Number(s.total), 0),
+      },
+      recentSales,
+    },
+  };
+}
+

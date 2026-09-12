@@ -160,12 +160,9 @@ export function CategoriesClient({ initialCategories }: { initialCategories: Cat
       {/* Header & Action Button */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">
-            Kategori Produk
+          <h2 className="text-xl font-bold tracking-tight text-foreground">
+            Data Kategori
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Kelola pengelompokan produk seperti Smartphone, Aksesoris, Tablet, dll.
-          </p>
         </div>
         <Button
           onClick={handleOpenAdd}

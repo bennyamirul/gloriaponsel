@@ -55,7 +55,7 @@ export async function createSession(user: UserSession): Promise<void> {
 
   cookieStore.set(AUTH_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: false, // Diizinkan untuk akses IP lokal HTTP (Wi-Fi) di smartphone
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_DURATION_SECONDS,

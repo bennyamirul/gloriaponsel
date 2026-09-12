@@ -149,7 +149,7 @@ export function Topbar({
             <DropdownMenuItem
               onClick={() => {
                 if (typeof window !== "undefined") {
-                  window.location.href = "/settings";
+                  window.location.href = "/profile";
                 }
               }}
             >

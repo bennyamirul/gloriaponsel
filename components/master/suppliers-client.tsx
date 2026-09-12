@@ -151,15 +151,11 @@ export function SuppliersClient({ initialSuppliers }: { initialSuppliers: Suppli
 
   return (
     <div className="space-y-6">
-      {/* Header & Action Button */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">
             Data Supplier
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Kelola data distributor dan supplier untuk keperluan pencatatan stok masuk.
-          </p>
         </div>
         <Button
           onClick={handleOpenAdd}

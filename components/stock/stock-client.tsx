@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   Boxes,
   ArrowDownLeft,
@@ -40,7 +41,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  createStockIn,
   createStockAdjustment,
   getProductStockCard,
 } from "@/lib/actions/stock.actions";
@@ -95,17 +95,9 @@ export function StockClient({
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
 
-  // Dialog states for Stock In and Adjustment
-  const [isStockInOpen, setIsStockInOpen] = useState(false);
+  // Dialog state for Adjustment (Opname)
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Stock In Form State
-  const [stockInSupplierId, setStockInSupplierId] = useState(suppliers[0]?.id || "");
-  const [stockInInvoice, setStockInInvoice] = useState("");
-  const [stockInItems, setStockInItems] = useState<
-    { productId: string; qty: number; unitCost: number }[]
-  >([{ productId: products[0]?.id || "", qty: 1, unitCost: products[0]?.purchasePrice || 0 }]);
 
   // Adjustment Form State
   const [adjProductId, setAdjProductId] = useState(products[0]?.id || "");
@@ -133,40 +125,6 @@ export function StockClient({
       toast.error("Gagal memuat kartu stok.");
     } finally {
       setIsLoadingCard(false);
-    }
-  };
-
-  // Submit Stock In
-  const handleStockInSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!stockInInvoice.trim()) {
-      toast.error("Nomor faktur / surat jalan supplier wajib diisi.");
-      return;
-    }
-    if (stockInItems.length === 0) {
-      toast.error("Minimal pilih 1 produk.");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await createStockIn({
-        supplierId: stockInSupplierId,
-        invoiceNo: stockInInvoice,
-        items: stockInItems,
-      });
-
-      if (res.error) {
-        toast.error(res.error);
-      } else {
-        toast.success("Penerimaan stok dari supplier berhasil disimpan!");
-        setIsStockInOpen(false);
-        window.location.reload();
-      }
-    } catch {
-      toast.error("Terjadi kesalahan sistem.");
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -246,12 +204,9 @@ export function StockClient({
       {/* Header & Quick Action Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">
-            Manajemen Stok
+          <h2 className="text-xl font-bold tracking-tight text-foreground">
+            Mutasi Stok
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Pencatatan stok masuk, penyesuaian stok opname, dan kartu stok produk.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -264,13 +219,14 @@ export function StockClient({
             <span>Koreksi / Opname</span>
           </Button>
 
-          <Button
-            onClick={() => setIsStockInOpen(true)}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl gap-1.5 text-xs h-9 shadow-md shadow-indigo-600/20"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Stok Masuk (Supplier)</span>
-          </Button>
+          <Link href="/products">
+            <Button
+              className="bg-primary text-primary-foreground font-semibold rounded-xl gap-1.5 text-xs h-9 shadow-md shadow-primary/20"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Input Produk & Stok Masuk</span>
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -587,8 +543,11 @@ export function StockClient({
               <TableBody>
                 {lowStockProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-32 text-center text-muted-foreground">
-                      Semua stok produk saat ini dalam kondisi aman! 🎉
+                    <TableCell colSpan={5} className="h-28 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center gap-1.5 py-4">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                        <span className="text-xs font-medium">Semua stok produk dalam kondisi aman</span>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -612,16 +571,14 @@ export function StockClient({
                         {p.minStock} Unit
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            setStockInItems([{ productId: p.id, qty: 5, unitCost: 0 }]);
-                            setIsStockInOpen(true);
-                          }}
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs h-8 rounded-lg"
-                        >
-                          Restock Sekarang
-                        </Button>
+                        <Link href="/products">
+                          <Button
+                            size="sm"
+                            className="bg-primary text-primary-foreground text-xs h-8 rounded-lg font-semibold"
+                          >
+                            Tambah Stok
+                          </Button>
+                        </Link>
                       </TableCell>
                     </TableRow>
                   ))
@@ -632,172 +589,7 @@ export function StockClient({
         </div>
       )}
 
-      {/* DIALOG: STOK MASUK DARI SUPPLIER */}
-      <Dialog open={isStockInOpen} onOpenChange={setIsStockInOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold">
-              Pencatatan Stok Masuk (Supplier)
-            </DialogTitle>
-            <DialogDescription>
-              Catat penerimaan barang dari distributor untuk menambah stok toko.
-            </DialogDescription>
-          </DialogHeader>
 
-          <form onSubmit={handleStockInSubmit} className="space-y-4 pt-2 text-xs">
-            {/* Supplier & No Faktur */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="font-semibold text-foreground">Distributor / Supplier *</label>
-                <select
-                  value={stockInSupplierId}
-                  onChange={(e) => setStockInSupplierId(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-input bg-background px-3 text-xs"
-                  required
-                >
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-semibold text-foreground">No. Surat Jalan / Faktur *</label>
-                <Input
-                  placeholder="Contoh: SJ-2026/09/001"
-                  value={stockInInvoice}
-                  onChange={(e) => setStockInInvoice(e.target.value)}
-                  className="h-9 text-xs"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Items List */}
-            <div className="space-y-3 pt-2 border-t border-border">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-foreground">Daftar Barang Diterima</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setStockInItems((prev) => [
-                      ...prev,
-                      { productId: products[0]?.id || "", qty: 1, unitCost: 0 },
-                    ])
-                  }
-                  className="text-indigo-600 hover:text-indigo-700 text-xs font-semibold flex items-center gap-1"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Tambah Baris</span>
-                </button>
-              </div>
-
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {stockInItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 bg-muted/40 rounded-xl border border-border grid grid-cols-1 sm:grid-cols-12 gap-2 items-end"
-                  >
-                    <div className="sm:col-span-6 space-y-1">
-                      <label className="text-[11px] text-muted-foreground">Pilih Produk</label>
-                      <select
-                        value={item.productId}
-                        onChange={(e) => {
-                          const newProdId = e.target.value;
-                          const found = products.find((p) => p.id === newProdId);
-                          setStockInItems((prev) =>
-                            prev.map((it, i) =>
-                              i === idx
-                                ? {
-                                    ...it,
-                                    productId: newProdId,
-                                    unitCost: found?.purchasePrice || it.unitCost,
-                                  }
-                                : it
-                            )
-                          );
-                        }}
-                        className="w-full h-8 rounded-lg border border-input bg-background px-2 text-xs truncate"
-                      >
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.sku})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="sm:col-span-2 space-y-1">
-                      <label className="text-[11px] text-muted-foreground">Jumlah (Qty)</label>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={item.qty}
-                        onChange={(e) => {
-                          const q = Number(e.target.value) || 1;
-                          setStockInItems((prev) =>
-                            prev.map((it, i) => (i === idx ? { ...it, qty: q } : it))
-                          );
-                        }}
-                        className="h-8 text-xs text-center"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-3 space-y-1">
-                      <label className="text-[11px] text-muted-foreground">Harga Beli (Rp)</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={item.unitCost}
-                        onChange={(e) => {
-                          const cost = Number(e.target.value) || 0;
-                          setStockInItems((prev) =>
-                            prev.map((it, i) => (i === idx ? { ...it, unitCost: cost } : it))
-                          );
-                        }}
-                        className="h-8 text-xs text-right"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-1 flex justify-end">
-                      {stockInItems.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setStockInItems((prev) => prev.filter((_, i) => i !== idx))
-                          }
-                          className="text-rose-500 hover:text-rose-700 p-1"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <DialogFooter className="pt-4 border-t border-border">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsStockInOpen(false)}
-              >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="bg-indigo-600 hover:bg-indigo-500 font-semibold"
-              >
-                {isLoading ? "Menyimpan..." : "Simpan Penerimaan Barang"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       {/* DIALOG: PENYESUAIAN STOK (OPNAME) */}
       <Dialog open={isAdjustmentOpen} onOpenChange={setIsAdjustmentOpen}>

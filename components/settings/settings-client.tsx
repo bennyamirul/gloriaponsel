@@ -8,7 +8,6 @@ import {
   MapPin,
   Image as ImageIcon,
   Receipt,
-  Boxes,
   Save,
   CheckCircle2,
   Smartphone,
@@ -19,14 +18,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { updateStoreSettings } from "@/lib/actions/setting.actions";
+import { compressImage } from "@/lib/image-compress";
 
 interface StoreSettingData {
   id: string;
   storeName: string;
   phone: string;
   address: string;
-  logoUrl: string;
   receiptFooter: string;
+  logoUrl: string;
   defaultMinStock: number;
   updatedAt: string;
 }
@@ -42,11 +42,16 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
   const [logoPreview, setLogoPreview] = useState<string>(initialSettings.logoUrl);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setLogoFile(file);
       setLogoPreview(URL.createObjectURL(file));
+      try {
+        const compressed = await compressImage(file, { maxWidth: 600, maxHeight: 600, quality: 0.85 });
+        setLogoFile(compressed);
+      } catch {
+        setLogoFile(file);
+      }
     }
   };
 
@@ -84,13 +89,9 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Header & Save Action */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg font-bold text-foreground">Pengaturan Profil Toko & Struk</h3>
-          <p className="text-xs text-muted-foreground">
-            Kelola identitas resmi toko, format struk kasir termal, dan ambang batas stok minimum.
-          </p>
+          <h3 className="text-xl font-bold tracking-tight text-foreground">Pengaturan Toko</h3>
         </div>
         <Button
           type="submit"
@@ -184,32 +185,6 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">
                   Pesan ini akan dicetak otomatis di struk kasir fisik 58mm / 80mm setelah transaksi selesai.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Section 3: Konfigurasi Stok Global */}
-          <Card className="shadow-sm border border-border">
-            <CardContent className="p-5 space-y-4">
-              <div className="flex items-center gap-2 pb-3 border-b border-border">
-                <Boxes className="h-4 w-4 text-indigo-600" />
-                <h4 className="text-sm font-bold text-foreground">Konfigurasi Stok Minimum Global</h4>
-              </div>
-
-              <div className="max-w-xs">
-                <label className="text-xs font-semibold text-foreground">
-                  Default Batas Minimum Stok (Min Stock)
-                </label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={defaultMinStock}
-                  onChange={(e) => setDefaultMinStock(parseInt(e.target.value, 10) || 0)}
-                  className="mt-1 text-xs"
-                />
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Ambang batas awal otomatis untuk memicu peringatan <em>Low Stock Alert</em> saat mendaftarkan produk baru.
                 </p>
               </div>
             </CardContent>

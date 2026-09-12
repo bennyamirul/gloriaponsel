@@ -150,12 +150,9 @@ export function BrandsClient({ initialBrands }: { initialBrands: BrandItem[] }) 
       {/* Header & Action Button */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">
-            Brand Handphone
+          <h2 className="text-xl font-bold tracking-tight text-foreground">
+            Data Brand
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Kelola merk handphone seperti Apple, Samsung, Xiaomi, Oppo, Vivo, dll.
-          </p>
         </div>
         <Button
           onClick={handleOpenAdd}

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Smartphone, Lock, Mail, Loader2 } from "lucide-react";
+import { Smartphone, Lock, Mail, Loader2, ShieldCheck, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -58,8 +58,7 @@ function LoginForm() {
         toast.error(res.error);
       } else if (res.success) {
         toast.success("Login berhasil! Mengalihkan ke dashboard...");
-        router.push(callbackUrl);
-        router.refresh();
+        window.location.href = callbackUrl;
       }
     } catch {
       const errText = "Terjadi kesalahan sistem yang tidak terduga.";
@@ -72,8 +71,9 @@ function LoginForm() {
 
   // Quick fill helper for dev testing
   const handleQuickFill = (email: string) => {
-    form.setValue("email", email);
-    form.setValue("password", "Password123!");
+    form.setValue("email", email, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+    form.setValue("password", "Password123!", { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+    toast.success(`Akun ${email} berhasil diisi! Silakan klik Masuk.`);
   };
 
   return (
@@ -181,28 +181,34 @@ function LoginForm() {
       {/* Development Quick-Login Helper */}
       <div className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-4 text-xs text-slate-400 backdrop-blur-sm">
         <p className="font-semibold text-slate-300 mb-2">
-          Akun Default Development:
+          Akun Demo:
         </p>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => handleQuickFill("owner@tokohp.com")}
-            className="flex flex-col items-start rounded-lg border border-slate-800 bg-slate-950/60 p-2 text-left hover:border-indigo-500/50 transition"
+            className="flex flex-col items-start rounded-xl border border-slate-800 bg-slate-950/80 p-2.5 text-left hover:border-primary/50 transition cursor-pointer active:scale-95 touch-manipulation"
           >
-            <span className="font-medium text-indigo-400">Super Admin</span>
+            <span className="font-bold text-[#055B5A] dark:text-teal-400 flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>Super Admin</span>
+            </span>
             <span className="text-[11px] text-slate-400 truncate w-full">owner@tokohp.com</span>
           </button>
           <button
             type="button"
             onClick={() => handleQuickFill("kasir@tokohp.com")}
-            className="flex flex-col items-start rounded-lg border border-slate-800 bg-slate-950/60 p-2 text-left hover:border-indigo-500/50 transition"
+            className="flex flex-col items-start rounded-xl border border-slate-800 bg-slate-950/80 p-2.5 text-left hover:border-primary/50 transition cursor-pointer active:scale-95 touch-manipulation"
           >
-            <span className="font-medium text-purple-400">Admin Kasir</span>
+            <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+              <UserCheck className="h-3.5 w-3.5" />
+              <span>Admin Kasir</span>
+            </span>
             <span className="text-[11px] text-slate-400 truncate w-full">kasir@tokohp.com</span>
           </button>
         </div>
         <p className="text-[10px] text-slate-400 mt-2 text-center">
-          Password: <code className="text-slate-200">Password123!</code> (Klik kartu untuk auto-fill)
+          Password: <code className="text-slate-200">Password123!</code>
         </p>
       </div>
     </div>

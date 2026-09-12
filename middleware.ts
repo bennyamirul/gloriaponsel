@@ -8,7 +8,15 @@ const JWT_SECRET = new TextEncoder().encode(
 );
 
 // Rute yang hanya boleh diakses oleh Super Admin
-const SUPER_ADMIN_ONLY_ROUTES = ["/users", "/settings"];
+const SUPER_ADMIN_ONLY_ROUTES = [
+  "/users",
+  "/settings",
+  "/reports",
+  "/products",
+  "/categories",
+  "/brands",
+  "/suppliers",
+];
 
 // Daftar prefix rute internal dashboard
 const PROTECTED_ROUTES = [
@@ -23,6 +31,7 @@ const PROTECTED_ROUTES = [
   "/customers",
   "/users",
   "/settings",
+  "/profile",
 ];
 
 export async function middleware(request: NextRequest) {

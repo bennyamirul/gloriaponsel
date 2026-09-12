@@ -1,13 +1,14 @@
 import { getProducts } from "@/lib/actions/product.actions";
 import { getCustomers } from "@/lib/actions/customer.actions";
-import { getSales } from "@/lib/actions/sale.actions";
+import { getSales, getSalesLifecycleData } from "@/lib/actions/sale.actions";
 import { SalesTabsClient } from "@/components/sales/sales-tabs-client";
 
 export default async function SalesPage() {
-  const [productsData, customers, salesData] = await Promise.all([
+  const [productsData, customers, salesData, lifecycleData] = await Promise.all([
     getProducts({ limit: 100 }),
     getCustomers(),
-    getSales({ limit: 50 }),
+    getSales({ limit: 100 }),
+    getSalesLifecycleData(),
   ]);
 
   return (
@@ -21,6 +22,7 @@ export default async function SalesPage() {
       initialSales={salesData.sales as any}
       currentUserId={salesData.currentUserId}
       currentUserRole={salesData.currentUserRole}
+      lifecycleData={lifecycleData}
     />
   );
 }

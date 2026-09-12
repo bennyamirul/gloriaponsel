@@ -57,6 +57,7 @@ export interface SaleRecord {
   cashierId: string;
   subtotal: number;
   discount: number;
+  additionalFee?: number;
   total: number;
   paymentMethod: "cash" | "transfer" | "edc" | "qris";
   status: "completed" | "cancelled";
@@ -451,6 +452,12 @@ export function SalesHistoryClient({
                       <span>-{formatRupiah(selectedSale.discount)}</span>
                     </div>
                   )}
+                  {selectedSale.additionalFee && selectedSale.additionalFee > 0 ? (
+                    <div className="flex justify-between text-primary font-medium">
+                      <span>Biaya Tambahan</span>
+                      <span>+{formatRupiah(selectedSale.additionalFee)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between text-base font-extrabold text-foreground pt-1 border-t border-border">
                     <span>Total Tagihan</span>
                     <span className="text-indigo-600">

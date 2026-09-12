@@ -113,7 +113,7 @@ export function ProfitReportView({ data }: ProfitReportViewProps) {
           </div>
           <p className="text-xs text-muted-foreground">
             Periode: {new Date(summary.startDate).toLocaleDateString("id-ID")} -{" "}
-            {new Date(summary.endDate).toLocaleDateString("id-ID")} • Formula: Laba Kotor = Omzet Bersih − HPP
+            {new Date(summary.endDate).toLocaleDateString("id-ID")}
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -20,6 +20,7 @@ import {
   UserCheck,
   PanelLeftClose,
   PanelLeftOpen,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,19 +41,16 @@ const navSections: NavSection[] = [
     title: "Operasional",
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Kasir POS", href: "/sales", icon: ShoppingCart },
-      { label: "Manajemen Stok", href: "/stock", icon: Boxes },
-      { label: "Laporan", href: "/reports", icon: BarChart3 },
+      { label: "Transaksi", href: "/sales", icon: ShoppingCart },
+      { label: "Manajemen Unit", href: "/stock", icon: Boxes },
+      { label: "Laporan", href: "/reports", icon: BarChart3, superAdminOnly: true },
     ],
   },
   {
     title: "Master Data",
     items: [
-      { label: "Produk", href: "/products", icon: Package },
-      { label: "Kategori", href: "/categories", icon: Layers },
-      { label: "Brand", href: "/brands", icon: Tag },
-      { label: "Supplier", href: "/suppliers", icon: Truck },
-      { label: "Pelanggan", href: "/customers", icon: UserCheck },
+      { label: "Data Produk", href: "/products", icon: Package, superAdminOnly: true },
+      { label: "Cetak Barcode SKU", href: "/products/barcode", icon: Printer, superAdminOnly: true },
     ],
   },
   {
@@ -185,23 +183,27 @@ export function Sidebar({
         {/* Footer: User Profile Card & Logout */}
         <div className="p-3 border-t border-[#083b3a] bg-[#021716]/60">
           <div className="flex items-center justify-between p-2 rounded-xl bg-[#021716] border border-[#083b3a]">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#055b5a] text-xs font-bold text-white shadow-xs">
+            <Link
+              href="/profile"
+              className="flex items-center gap-2.5 min-w-0 flex-1 hover:opacity-90 transition group/profile"
+              title="Buka Pengaturan Profil"
+            >
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#055b5a] text-xs font-bold text-white shadow-xs group-hover/profile:ring-1 group-hover/profile:ring-teal-400">
                 {getInitials(userName)}
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-teal-100 truncate leading-tight">
+                <span className="text-xs font-semibold text-teal-100 truncate leading-tight group-hover/profile:text-white">
                   {userName}
                 </span>
                 <span className="text-[10px] capitalize text-teal-300/80 truncate">
                   {userRole.replace("_", " ")}
                 </span>
               </div>
-            </div>
+            </Link>
 
             <button
               onClick={handleLogout}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-teal-200/70 hover:text-rose-300 hover:bg-rose-950/40 transition"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-teal-200/70 hover:text-rose-300 hover:bg-rose-950/40 transition ml-1"
               title="Keluar Akun"
               aria-label="Keluar Akun"
             >
@@ -282,8 +284,21 @@ export function Sidebar({
         )}
       </nav>
 
-      {/* Bottom Action: Logout */}
-      <div className="flex flex-col items-center pt-2">
+      {/* Bottom Action: Profile & Logout */}
+      <div className="flex flex-col items-center gap-1.5 pt-2">
+        <Link
+          href="/profile"
+          className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-teal-200/70 hover:bg-[#073332] hover:text-white transition-all"
+          title="Pengaturan Profil"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#055b5a] text-[11px] font-bold text-white shadow-xs">
+            {getInitials(userName)}
+          </div>
+          <div className="absolute left-14 z-50 hidden rounded-md bg-[#021716] px-2.5 py-1 text-xs font-medium text-teal-100 shadow-md group-hover:block whitespace-nowrap border border-[#083b3a] pointer-events-none">
+            Pengaturan Profil
+          </div>
+        </Link>
+
         <button
           onClick={handleLogout}
           className="group relative flex h-10 w-10 items-center justify-center rounded-xl text-teal-200/70 hover:bg-rose-950/40 hover:text-rose-400 transition-all"
