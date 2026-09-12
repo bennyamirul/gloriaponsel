@@ -286,11 +286,19 @@ export function BarcodeScannerModal({
   const [manualInput, setManualInput] = useState("");
   const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>("");
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [isScanningFile, setIsScanningFile] = useState(false);
   const [lastScannedResult, setLastScannedResult] = useState<string | null>(null);
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+
+  const handleToggleFacingMode = () => {
+    const nextMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(nextMode);
+    setSelectedCameraId("");
+    setRetryCount((prev) => prev + 1);
+  };
 
   const scannerInstanceRef = useRef<Html5Qrcode | null>(null);
   const containerId = "html5-qrcode-modal-viewport";
@@ -407,7 +415,14 @@ export function BarcodeScannerModal({
     let isMounted = true;
 
     async function initScanner() {
-      if (isStartingRef.current || isStoppingRef.current) return;
+      // Tunggu jika proses safeStopScanner sebelumnya masih berjalan
+      let waitCount = 0;
+      while (isStoppingRef.current && waitCount < 15) {
+        await new Promise((r) => setTimeout(r, 100));
+        waitCount++;
+      }
+
+      if (isStartingRef.current) return;
       isStartingRef.current = true;
 
       try {
@@ -427,22 +442,6 @@ export function BarcodeScannerModal({
           throw new Error("Kamera tidak didukung atau izin belum diberikan pada browser ini.");
         }
 
-        const devices = await Html5Qrcode.getCameras();
-        if (!isMounted) return;
-
-        if (!devices || devices.length === 0) {
-          throw new Error("Tidak ditemukan kamera pada perangkat ini.");
-        }
-
-        setCameras(devices);
-        // Otomatis prioritaskan kamera belakang (smartphone) atau webcam utama (laptop)
-        const rearCamera = devices.find((d) => {
-          const l = d.label.toLowerCase();
-          return l.includes("back") || l.includes("rear") || l.includes("belakang") || l.includes("environment");
-        });
-        const activeCamId = selectedCameraId || (rearCamera ? rearCamera.id : devices[0].id);
-        setSelectedCameraId(activeCamId);
-
         // Hentikan dan bersihkan stream media apa pun yang masih aktif di DOM
         try {
           const existingVideos = document.querySelectorAll("video");
@@ -459,7 +458,7 @@ export function BarcodeScannerModal({
         } catch {}
 
         await safeStopScanner();
-        // Berikan jeda singkat agar driver kamera di Windows melepas exclusive lock
+        // Berikan jeda singkat agar driver kamera di perangkat melepas exclusive lock
         await new Promise((r) => setTimeout(r, 200));
         if (!isMounted) return;
 
@@ -488,32 +487,45 @@ export function BarcodeScannerModal({
 
         let started = false;
 
-        // Coba 1: Mulai dengan activeCamId dan resolusi ideal (tanpa min constraint agar tidak overconstrained di laptop)
+        // Tentukan konfigurasi kamera:
+        // Jika user memilih ID kamera spesifik dari dropdown, gunakan ID tersebut.
+        // Jika tidak, prioritaskan { facingMode } yang secara default adalah "environment" (Kamera Belakang di HP)!
+        const targetCameraConfig: any = selectedCameraId
+          ? selectedCameraId
+          : { facingMode: facingMode };
+
+        // Coba 1: Mulai dengan target camera dan resolusi ideal
         try {
           await html5QrCode.start(
-            activeCamId,
+            targetCameraConfig,
             {
               fps: 25,
               qrbox: qrboxCalc,
               aspectRatio: 1.777,
-              videoConstraints: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-              },
+              videoConstraints: selectedCameraId
+                ? {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                  }
+                : {
+                    facingMode: facingMode,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                  },
             },
             scanSuccessCb,
             () => {}
           );
           started = true;
         } catch (err1) {
-          console.warn("Camera start attempt 1 (ideal resolution) failed, trying fallback...", err1);
+          console.warn("Camera start attempt 1 failed, trying attempt 2...", err1);
         }
 
-        // Coba 2: Fallback tanpa videoConstraints (default resolusi kamera perangkat)
+        // Coba 2: Tanpa videoConstraints resolusi tambahan (default resolusi perangkat)
         if (!started && isMounted) {
           try {
             await html5QrCode.start(
-              activeCamId,
+              targetCameraConfig,
               {
                 fps: 20,
                 qrbox: qrboxCalc,
@@ -524,15 +536,16 @@ export function BarcodeScannerModal({
             );
             started = true;
           } catch (err2) {
-            console.warn("Camera start attempt 2 (no constraints) failed, trying generic selector...", err2);
+            console.warn("Camera start attempt 2 failed, trying fallback...", err2);
           }
         }
 
-        // Coba 3: Fallback ke generic camera device
-        if (!started && isMounted) {
+        // Coba 3: Jika target kamera belakang gagal (misal laptop/PC yang hanya punya webcam depan)
+        if (!started && isMounted && !selectedCameraId) {
+          const fallbackMode = facingMode === "environment" ? "user" : "environment";
           try {
             await html5QrCode.start(
-              { facingMode: "user" },
+              { facingMode: fallbackMode },
               {
                 fps: 20,
                 qrbox: qrboxCalc,
@@ -541,35 +554,76 @@ export function BarcodeScannerModal({
               () => {}
             );
             started = true;
+            setFacingMode(fallbackMode);
           } catch (err3) {
-            await html5QrCode.start(
-              { facingMode: "environment" },
-              {
-                fps: 20,
-                qrbox: qrboxCalc,
-              },
-              scanSuccessCb,
-              () => {}
-            );
-            started = true;
+            console.warn("Camera start attempt 3 (fallback facing) failed...", err3);
           }
         }
 
-        // Periksa dukungan Torch/Senter
-        try {
-          const caps = html5QrCode.getRunningTrackCameraCapabilities();
-          if (caps?.torchFeature && caps.torchFeature().isSupported()) {
-            setHasTorch(true);
-          } else {
-            const track = (html5QrCode as any).renderedCamera?.cameraRunningTrack;
-            if (track && typeof track.getCapabilities === "function") {
-              const nativeCaps = track.getCapabilities();
-              if ("torch" in nativeCaps) {
-                setHasTorch(true);
+        // Coba 4: Fallback terakhir menggunakan daftar kamera pertama yang terdeteksi
+        if (!started && isMounted) {
+          try {
+            const availDevices = await Html5Qrcode.getCameras().catch(() => []);
+            if (availDevices && availDevices.length > 0) {
+              await html5QrCode.start(
+                availDevices[0].id,
+                {
+                  fps: 20,
+                  qrbox: qrboxCalc,
+                },
+                scanSuccessCb,
+                () => {}
+              );
+              started = true;
+            }
+          } catch (err4) {
+            console.warn("Camera start attempt 4 failed...", err4);
+          }
+        }
+
+        if (!started && isMounted) {
+          throw new Error("Tidak dapat menyalakan kamera. Pastikan izin kamera telah diaktifkan di browser.");
+        }
+
+        // Ambil daftar perangkat kamera setelah izin kamera aktif (agar label terbaca lengkap dan jelas)
+        if (started && isMounted) {
+          try {
+            const updatedDevices = await Html5Qrcode.getCameras().catch(() => []);
+            if (updatedDevices && updatedDevices.length > 0) {
+              const formatted = updatedDevices.map((d, idx) => {
+                let lbl = d.label || `Kamera ${idx + 1}`;
+                const low = lbl.toLowerCase();
+                if (low.includes("back") || low.includes("rear") || low.includes("environment")) {
+                  if (!low.includes("belakang")) {
+                    lbl = `Kamera Belakang (${lbl})`;
+                  }
+                } else if (low.includes("front") || low.includes("user")) {
+                  if (!low.includes("depan")) {
+                    lbl = `Kamera Depan (${lbl})`;
+                  }
+                }
+                return { id: d.id, label: lbl };
+              });
+              setCameras(formatted);
+            }
+          } catch {}
+
+          // Periksa dukungan Torch/Flash
+          try {
+            const caps = html5QrCode.getRunningTrackCameraCapabilities();
+            if (caps?.torchFeature && caps.torchFeature().isSupported()) {
+              setHasTorch(true);
+            } else {
+              const track = (html5QrCode as any).renderedCamera?.cameraRunningTrack;
+              if (track && typeof track.getCapabilities === "function") {
+                const nativeCaps = track.getCapabilities();
+                if ("torch" in nativeCaps) {
+                  setHasTorch(true);
+                }
               }
             }
-          }
-        } catch {}
+          } catch {}
+        }
       } catch (err: any) {
         if (!isMounted) return;
         const rawMsg = (err?.message || String(err)).toLowerCase();
@@ -582,7 +636,7 @@ export function BarcodeScannerModal({
           rawMsg.includes("source unavailable")
         ) {
           msg =
-            "Kamera tidak dapat dimulai karena sedang digunakan oleh aplikasi lain (seperti Zoom, Google Meet, WhatsApp, aplikasi Kamera Windows, atau tab browser lain). Tutup aplikasi tersebut atau gunakan tab 'Foto Kamera HP' di atas.";
+            "Kamera tidak dapat dimulai karena sedang digunakan oleh aplikasi lain. Tutup aplikasi lain atau gunakan tab 'Foto Kamera HP' di atas.";
         } else if (
           rawMsg.includes("notallowederror") ||
           rawMsg.includes("permission denied")
@@ -613,7 +667,7 @@ export function BarcodeScannerModal({
       clearTimeout(timer);
       safeStopScanner();
     };
-  }, [open, mode, selectedCameraId, retryCount, handleDetected, safeStopScanner]);
+  }, [open, mode, selectedCameraId, facingMode, retryCount, handleDetected, safeStopScanner]);
 
   // Scan dari File Foto / Kamera HP Langsung
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -723,26 +777,42 @@ export function BarcodeScannerModal({
           {/* TAB 1: KAMERA LIVE */}
           {mode === "camera" && (
             <>
-              {/* Baris Kontrol Kamera: Switcher & Senter */}
+              {/* Baris Kontrol Kamera: Switcher Depan/Belakang & Senter */}
               <div className="flex items-center justify-between gap-2 text-xs">
-                {cameras.length > 1 ? (
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="text-muted-foreground whitespace-nowrap">Kamera:</span>
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  {/* Tombol Cepat Balik Kamera Belakang / Depan */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleToggleFacingMode}
+                    className="h-8 text-xs gap-1.5 shrink-0 bg-background hover:bg-muted font-medium border-border"
+                    title="Ganti antara Kamera Belakang dan Kamera Depan"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 text-primary" />
+                    <span>{facingMode === "environment" ? "Kamera Belakang" : "Kamera Depan"}</span>
+                  </Button>
+
+                  {/* Dropdown Pilihan Lensa Sensor Kamera */}
+                  {cameras.length > 1 && (
                     <select
+                      aria-label="Pilih Lensa Kamera"
                       value={selectedCameraId}
-                      onChange={(e) => setSelectedCameraId(e.target.value)}
+                      onChange={(e) => {
+                        setSelectedCameraId(e.target.value);
+                        setRetryCount((prev) => prev + 1);
+                      }}
                       className="flex-1 h-8 rounded-lg border border-input bg-background px-2 text-xs truncate"
                     >
+                      <option value="">Otomatis ({facingMode === "environment" ? "Belakang" : "Depan"})</option>
                       {cameras.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.label || `Kamera ${c.id}`}
+                          {c.label}
                         </option>
                       ))}
                     </select>
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-muted-foreground">Kamera Aktif</span>
-                )}
+                  )}
+                </div>
 
                 {hasTorch && (
                   <Button
@@ -753,7 +823,7 @@ export function BarcodeScannerModal({
                     className="h-8 text-xs gap-1.5 shrink-0"
                   >
                     {torchOn ? <ZapOff className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />}
-                    <span>{torchOn ? "Matikan Flash" : "Lampu Flash"}</span>
+                    <span>{torchOn ? "Matikan Flash" : "Flash"}</span>
                   </Button>
                 )}
               </div>
