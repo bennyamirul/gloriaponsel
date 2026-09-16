@@ -184,7 +184,7 @@ export function SalesLifecycleClient({
   userRole = "super_admin",
 }: SalesLifecycleClientProps) {
   const router = useRouter();
-  const isSuperAdmin = userRole === "super_admin";
+  const isSuperAdmin = userRole === "super_admin" || userRole === "owner";
   const [activeTab, setActiveTab] = useState<"ready" | "warranty" | "sold">("ready");
   const currentTab = !isSuperAdmin ? "ready" : activeTab;
   const [searchQuery, setSearchQuery] = useState("");
@@ -757,31 +757,6 @@ export function SalesLifecycleClient({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setSelectedInvoice({
-                                invoiceNo: item.invoiceNo,
-                                saleDate: item.saleDate,
-                                customerName: item.customerName,
-                                customerPhone: item.customerPhone,
-                                cashierName: item.cashierName,
-                                productName: item.productName,
-                                imei: item.imei,
-                                sku: item.sku,
-                                warrantyDays: item.warrantyDays,
-                                warrantyExpiry: item.warrantyExpiry,
-                                unitPrice: item.unitPrice,
-                                qty: item.qty,
-                                subtotal: item.subtotal,
-                              })
-                            }
-                            className="h-8 text-xs font-semibold gap-1.5 rounded-lg"
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            <span>Faktur</span>
-                          </Button>
                           <Button
                             size="sm"
                             variant="outline"

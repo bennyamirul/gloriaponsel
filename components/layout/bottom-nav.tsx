@@ -21,6 +21,9 @@ import {
   LogOut,
   ChevronRight,
   Printer,
+  TrendingUp,
+  Wallet,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -38,28 +41,39 @@ interface BottomNavProps {
 export function BottomNav({ userRole = "super_admin" }: BottomNavProps) {
   const pathname = usePathname();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
-  const isSuperAdmin = userRole === "super_admin";
+  const isOwner = userRole === "owner" || userRole === "super_admin";
+  const isWarehouse = userRole === "staff_gudang";
 
-  const mainTabs = isSuperAdmin
-    ? [
-        { label: "Home", href: "/dashboard", icon: LayoutDashboard },
-        { label: "Produk", href: "/products", icon: Package },
-        { label: "Kasir", href: "/sales", icon: ShoppingCart },
-        { label: "Laporan", href: "/reports", icon: BarChart3 },
-      ]
-    : [
-        { label: "Home", href: "/dashboard", icon: LayoutDashboard },
-        { label: "Transaksi", href: "/sales", icon: ShoppingCart },
-        { label: "Manajemen Unit", href: "/stock", icon: Boxes },
-      ];
+  let mainTabs = [
+    { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+    { label: "Kasir", href: "/sales", icon: ShoppingCart },
+  ];
+
+  if (isOwner) {
+    mainTabs = [
+      { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+      { label: "Produk", href: "/products", icon: Package },
+      { label: "Kasir", href: "/sales", icon: ShoppingCart },
+      { label: "Laporan", href: "/reports", icon: BarChart3 },
+    ];
+  } else if (isWarehouse) {
+    mainTabs = [
+      { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+      { label: "Produk", href: "/products", icon: Package },
+      { label: "Barcode", href: "/products/barcode", icon: Printer },
+    ];
+  }
 
   const drawerMenuItems = [
+    { label: "Riwayat Transaksi", href: "/sales/history", icon: Layers },
     { label: "Pengaturan Profil", href: "/profile", icon: User },
-    ...(isSuperAdmin
+    ...(isOwner
       ? [
-          { label: "Manajemen Stok", href: "/stock", icon: Boxes },
+          { label: "Laporan Penjualan", href: "/reports/sales", icon: TrendingUp },
+          { label: "Pengeluaran Harian", href: "/reports/expenses", icon: Wallet },
+          { label: "Laporan Keuangan", href: "/reports/financial", icon: Receipt },
           { label: "Cetak Barcode SKU", href: "/products/barcode", icon: Printer },
-          { label: "Manajemen User (Admin)", href: "/users", icon: Users },
+          { label: "Manajemen User", href: "/users", icon: Users },
           { label: "Pengaturan Toko", href: "/settings", icon: Settings },
         ]
       : []),

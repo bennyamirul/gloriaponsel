@@ -12,6 +12,7 @@ import {
   CreditCard,
   QrCode,
   User,
+  Phone,
   Printer,
   Smartphone,
   Headphones,
@@ -20,7 +21,16 @@ import {
   ShoppingBag,
   Clock,
   ShieldCheck,
+  Download,
+  Loader2,
+  Store,
+  MessageSquare,
+  Share2,
+  UploadCloud,
+  ExternalLink,
+  AlertCircle,
 } from "lucide-react";
+import html2canvas from "html2canvas";
 import { toast } from "sonner";
 import { formatRupiah } from "@/lib/utils";
 
@@ -43,9 +53,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { createSale } from "@/lib/actions/sale.actions";
+import { createSale, uploadSalePaymentProof } from "@/lib/actions/sale.actions";
 import { getProductByImei } from "@/lib/actions/product.actions";
-import { BarcodeScannerModal, scanBarcodeFromFile } from "@/components/ui/barcode-scanner-modal";
+import {
+  BarcodeScannerModal,
+  scanBarcodeFromFile,
+} from "@/components/ui/barcode-scanner-modal";
 
 export interface PosProductItem {
   id: string;
@@ -78,6 +91,8 @@ interface CartLineItem {
 interface SalesPosClientProps {
   products: PosProductItem[];
   customers: PosCustomerItem[];
+  storeSettings?: any;
+  currentUserRole?: string;
   onSaleCreated?: (invoiceNo: string) => void;
 }
 
@@ -104,42 +119,68 @@ function playScanBeep() {
 export function SalesPosClient({
   products,
   customers,
+  storeSettings,
+  currentUserRole,
   onSaleCreated,
 }: SalesPosClientProps) {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [cart, setCart] = useState<CartLineItem[]>([]);
-  const [customerName, setCustomerName] = useState<string>("Pelanggan Umum");
+  const [customerName, setCustomerName] = useState<string>("");
+  const [customerPhone, setCustomerPhone] = useState<string>("");
   const [discount, setDiscount] = useState<number>(0);
   const [additionalFee, setAdditionalFee] = useState<number>(0);
+  const [additionalFeeNote, setAdditionalFeeNote] = useState<string>("");
   const [warrantyDays, setWarrantyDays] = useState<number>(7);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "transfer" | "edc" | "qris">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "cash" | "transfer" | "edc" | "qris"
+  >("cash");
   const [cashAmount, setCashAmount] = useState<number | "">("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
   const [isManualSearchOpen, setIsManualSearchOpen] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
+  const [isDownloadingJpg, setIsDownloadingJpg] = useState(false);
+  const [printFormat, setPrintFormat] = useState<"standard" | "thermal">(
+    "thermal",
+  );
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   // Completed receipt modal state
   const [completedSale, setCompletedSale] = useState<{
+    saleId?: string;
     invoiceNo: string;
     items: CartLineItem[];
     subtotal: number;
     discount: number;
     additionalFee?: number;
+    additionalFeeNote?: string | null;
     warrantyDays?: number;
     total: number;
     paymentMethod: string;
     customerName?: string;
+    customerPhone?: string | null;
+    cashierName?: string;
     date: string;
+    createdAt?: string;
+    paymentProofUrl?: string | null;
   } | null>(null);
+
+  // State upload bukti pembayaran di POS
+  const [isUploadingPosProof, setIsUploadingPosProof] = useState(false);
+  const uploadedProofFileRef = useRef<File | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const searchDropdownRef = useRef<HTMLDivElement | null>(null);
+  const hasUserInteractedRef = useRef(false);
 
   // Focus scanner input on mount
   useEffect(() => {
-    barcodeInputRef.current?.focus();
+    barcodeInputRef.current?.focus({ preventScroll: true });
+    const timer = setTimeout(() => {
+      hasUserInteractedRef.current = true;
+    }, 200);
+    return () => clearTimeout(timer);
   }, []);
 
   // Close search dropdown on click outside
@@ -162,70 +203,97 @@ export function SalesPosClient({
 
   // Live filtered products based on barcode / IMEI / Name / Brand
   const searchMatches = useMemo(() => {
+    const isReadyProduct = (p: PosProductItem) =>
+      (p.status === "available" || p.status === "ready") && p.stock > 0;
+
     const q = barcodeInput.trim().toLowerCase();
-    if (!q) return [];
+    if (!q) {
+      // Saat input kosong / baru diklik, langsung munculkan produk siap jual
+      const available = products.filter(isReadyProduct);
+      return available.slice(0, 20);
+    }
     return products
       .filter((p) => {
+        if (!isReadyProduct(p)) return false;
         const matchName = p.name.toLowerCase().includes(q);
         const matchImei = p.imei ? p.imei.toLowerCase().includes(q) : false;
         const matchSku = p.sku ? p.sku.toLowerCase().includes(q) : false;
-        const matchBrand = p.brandName ? p.brandName.toLowerCase().includes(q) : false;
-        const matchCapacity = p.capacity ? p.capacity.toLowerCase().includes(q) : false;
+        const matchBrand = p.brandName
+          ? p.brandName.toLowerCase().includes(q)
+          : false;
+        const matchCapacity = p.capacity
+          ? p.capacity.toLowerCase().includes(q)
+          : false;
         const matchColor = p.color ? p.color.toLowerCase().includes(q) : false;
-        return matchName || matchImei || matchSku || matchBrand || matchCapacity || matchColor;
+        return (
+          matchName ||
+          matchImei ||
+          matchSku ||
+          matchBrand ||
+          matchCapacity ||
+          matchColor
+        );
       })
-      .slice(0, 8);
+      .slice(0, 20);
   }, [barcodeInput, products]);
 
   // Add product to transaction lines
-  const addItemToTransaction = useCallback(
-    (product: PosProductItem) => {
-      // Stock validation
-      if (product.stock <= 0) {
-        toast.error(`Stok "${product.name}" habis.`);
-        return;
-      }
+  const addItemToTransaction = useCallback((product: PosProductItem) => {
+    // Validasi status siap jual (hanya status ready / available)
+    if (product.status !== "available" && product.status !== "ready") {
+      toast.error(
+        `Produk "${product.name}" belum disetujui atau tidak berstatus ready (Status: ${product.status}).`,
+      );
+      return;
+    }
 
-      if (product.status === "sold") {
-        toast.error(`Unit handphone (IMEI: ${product.imei}) sudah berstatus TERJUAL.`);
-        return;
-      }
+    // Stock validation
+    if (product.stock <= 0) {
+      toast.error(`Stok "${product.name}" habis.`);
+      return;
+    }
 
-      const isPhone = (product.productType || "phone") === "phone";
+    const isPhone = (product.productType || "phone") === "phone";
 
-      setCart((prev) => {
-        const existingIdx = prev.findIndex((item) => item.product.id === product.id);
+    setCart((prev) => {
+      const existingIdx = prev.findIndex(
+        (item) => item.product.id === product.id,
+      );
 
-        if (existingIdx >= 0) {
-          if (isPhone) {
-            toast.warning(`Unit HP (IMEI: ${product.imei}) sudah ada dalam daftar transaksi.`);
-            return prev;
-          }
+      if (existingIdx >= 0) {
+        if (isPhone) {
+          toast.warning(
+            `Unit HP (IMEI: ${product.imei}) sudah ada dalam daftar transaksi.`,
+          );
+          return prev;
+        }
 
-          // Aksesoris: tambah qty
-          const currentQty = prev[existingIdx].qty;
-          if (currentQty + 1 > product.stock) {
-            toast.warning(`Stok aksesoris tidak mencukupi (Tersedia: ${product.stock}).`);
-            return prev;
-          }
-
-          playScanBeep();
-          toast.success(`Jumlah ${product.name} bertambah (+1).`);
-          const updated = [...prev];
-          updated[existingIdx] = {
-            ...updated[existingIdx],
-            qty: currentQty + 1,
-          };
-          return updated;
+        // Aksesoris: tambah qty
+        const currentQty = prev[existingIdx].qty;
+        if (currentQty + 1 > product.stock) {
+          toast.warning(
+            `Stok aksesoris tidak mencukupi (Tersedia: ${product.stock}).`,
+          );
+          return prev;
         }
 
         playScanBeep();
-        toast.success(`Unit ${product.name} (${product.imei || product.sku}) ditambahkan.`);
-        return [...prev, { product, qty: 1 }];
-      });
-    },
-    []
-  );
+        toast.success(`Jumlah ${product.name} bertambah (+1).`);
+        const updated = [...prev];
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          qty: currentQty + 1,
+        };
+        return updated;
+      }
+
+      playScanBeep();
+      toast.success(
+        `Unit ${product.name} (${product.imei || product.sku}) ditambahkan.`,
+      );
+      return [...prev, { product, qty: 1 }];
+    });
+  }, []);
 
   // Handle scanned/typed barcode, IMEI, or product name
   const handleBarcodeProcess = async (code: string) => {
@@ -236,7 +304,7 @@ export function SalesPosClient({
     const foundExact = products.find(
       (p) =>
         (p.imei && p.imei.toLowerCase() === rawCode.toLowerCase()) ||
-        (p.sku && p.sku.toLowerCase() === rawCode.toLowerCase())
+        (p.sku && p.sku.toLowerCase() === rawCode.toLowerCase()),
     );
 
     if (foundExact) {
@@ -251,7 +319,8 @@ export function SalesPosClient({
     const nameMatches = products.filter(
       (p) =>
         p.name.toLowerCase().includes(rawCode.toLowerCase()) ||
-        (p.brandName && p.brandName.toLowerCase().includes(rawCode.toLowerCase()))
+        (p.brandName &&
+          p.brandName.toLowerCase().includes(rawCode.toLowerCase())),
     );
 
     // Jika tepat 1 produk cocok dengan nama yang diketik, langsung tambahkan
@@ -309,7 +378,7 @@ export function SalesPosClient({
           return { ...item, qty: newQty };
         }
         return item;
-      })
+      }),
     );
   };
 
@@ -323,33 +392,53 @@ export function SalesPosClient({
       setCart([]);
       setDiscount(0);
       setAdditionalFee(0);
+      setAdditionalFeeNote("");
       setWarrantyDays(7);
       setCashAmount("");
-      setCustomerName("Pelanggan Umum");
+      setCustomerName("");
+      setCustomerPhone("");
     }
   };
 
   // Calculations
   const subtotal = cart.reduce(
     (sum, item) => sum + item.product.sellingPrice * item.qty,
-    0
+    0,
   );
   const total = Math.max(0, subtotal - discount + additionalFee);
   const totalUnits = cart.reduce((sum, item) => sum + item.qty, 0);
 
   const changeAmount =
-    paymentMethod === "cash" && typeof cashAmount === "number" && cashAmount >= total
+    paymentMethod === "cash" &&
+    typeof cashAmount === "number" &&
+    cashAmount >= total
       ? cashAmount - total
       : 0;
 
   // Checkout submission
   const handleCheckout = async () => {
     if (cart.length === 0) {
-      toast.error("Transaksi masih kosong. Scan barcode unit atau masukkan item.");
+      toast.error(
+        "Transaksi masih kosong. Scan barcode unit atau masukkan item.",
+      );
       return;
     }
 
-    if (paymentMethod === "cash" && typeof cashAmount === "number" && cashAmount < total) {
+    if (!customerName.trim()) {
+      toast.error("Nama pelanggan wajib diisi sebelum memproses transaksi.");
+      return;
+    }
+
+    if (!customerPhone.trim()) {
+      toast.error("Nomor telepon / WhatsApp pelanggan wajib diisi sebelum memproses transaksi.");
+      return;
+    }
+
+    if (
+      paymentMethod === "cash" &&
+      typeof cashAmount === "number" &&
+      cashAmount < total
+    ) {
       toast.error("Nominal uang tunai kurang dari total belanja.");
       return;
     }
@@ -357,10 +446,12 @@ export function SalesPosClient({
     setIsProcessing(true);
     try {
       const payload = {
-        customerName: customerName.trim() || "Pelanggan Umum",
+        customerName: customerName.trim() || "",
+        customerPhone: customerPhone.trim() || null,
         paymentMethod,
         discount,
         additionalFee,
+        additionalFeeNote: additionalFeeNote.trim() || null,
         warrantyDays,
         items: cart.map((item) => ({
           productId: item.product.id,
@@ -374,25 +465,33 @@ export function SalesPosClient({
         toast.error(res.error);
       } else if (res.success && res.invoiceNo) {
         setCompletedSale({
+          saleId: res.saleId,
           invoiceNo: res.invoiceNo,
           items: [...cart],
           subtotal,
           discount,
           additionalFee,
+          additionalFeeNote: additionalFeeNote.trim() || null,
           warrantyDays,
           total,
           paymentMethod,
-          customerName: customerName.trim() || "Pelanggan Umum",
+          customerName: customerName.trim() || "",
+          customerPhone: customerPhone.trim() || null,
+          cashierName: (res as any).cashierName || "Kasir",
           date: new Date().toLocaleString("id-ID"),
+          createdAt: new Date().toISOString(),
+          paymentProofUrl: null,
         });
 
         toast.success(`Transaksi berhasil disimpan! Faktur: ${res.invoiceNo}`);
         setCart([]);
         setDiscount(0);
         setAdditionalFee(0);
+        setAdditionalFeeNote("");
         setWarrantyDays(7);
         setCashAmount("");
-        setCustomerName("Pelanggan Umum");
+        setCustomerName("");
+        setCustomerPhone("");
 
         if (onSaleCreated) {
           onSaleCreated(res.invoiceNo);
@@ -403,6 +502,113 @@ export function SalesPosClient({
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const WA_GROUP_LINK =
+    "https://chat.whatsapp.com/GAhjmAUfSXV0z1wkA8MZWG?s=cl&p=a&mlu=4&ilr=4";
+
+  const handleAutoUploadProof = async (file: File): Promise<string | null> => {
+    if (!file || !completedSale?.saleId) return null;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Hanya file gambar (JPG, PNG, WebP) yang diperbolehkan.");
+      return null;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Ukuran file maksimal 10MB.");
+      return null;
+    }
+
+    try {
+      setIsUploadingPosProof(true);
+      uploadedProofFileRef.current = file;
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await uploadSalePaymentProof(completedSale.saleId, formData);
+      if (res.error) {
+        toast.error(res.error);
+        return null;
+      }
+      if (res.success && res.paymentProofUrl) {
+        setCompletedSale((prev) =>
+          prev ? { ...prev, paymentProofUrl: res.paymentProofUrl } : null
+        );
+        toast.success("Bukti pembayaran berhasil disimpan!");
+        return res.paymentProofUrl;
+      }
+      return null;
+    } catch (err: any) {
+      toast.error(err.message || "Gagal mengunggah bukti pembayaran.");
+      return null;
+    } finally {
+      setIsUploadingPosProof(false);
+    }
+  };
+
+  const handleSendWhatsAppGroup = async () => {
+    if (!completedSale) return;
+
+    const messageText = `bukti transaksi [${completedSale.invoiceNo}]`;
+    const fullProofUrl = completedSale.paymentProofUrl
+      ? completedSale.paymentProofUrl.startsWith("http")
+        ? completedSale.paymentProofUrl
+        : `${window.location.origin}${completedSale.paymentProofUrl}`
+      : "";
+
+    let fileToShare = uploadedProofFileRef.current;
+
+    // Jika belum ada file di memori tetapi ada paymentProofUrl, download sebagai file
+    if (!fileToShare && fullProofUrl) {
+      try {
+        const res = await fetch(fullProofUrl);
+        const blob = await res.blob();
+        const ext = fullProofUrl.split(".").pop()?.split("?")[0] || "jpg";
+        fileToShare = new File([blob], `bukti-${completedSale.invoiceNo}.${ext}`, {
+          type: blob.type || "image/jpeg",
+        });
+        uploadedProofFileRef.current = fileToShare;
+      } catch {
+        // Abaikan jika fetch gagal
+      }
+    }
+
+    // 1. Coba gunakan Web Share API (Di HP / Smartphone Android & iOS)
+    // Fitur ini langsung membuka WhatsApp dengan FOTO TERLAMPIR dan TEKS "bukti transaksi [no-faktur]" sebagai caption/keterangan foto (SATU PESAN BERSAMAAN)
+    if (
+      fileToShare &&
+      typeof navigator !== "undefined" &&
+      navigator.canShare &&
+      navigator.canShare({ files: [fileToShare] })
+    ) {
+      try {
+        await navigator.share({
+          files: [fileToShare],
+          title: messageText,
+          text: messageText,
+        });
+        toast.success("Foto dan pesan bukti transaksi berhasil dibagikan ke WhatsApp!");
+        return;
+      } catch (err: any) {
+        if (err.name === "AbortError") return; // Staf membatalkan dialog share
+      }
+    }
+
+    // 2. Fallback untuk Desktop atau browser yang tidak mendukung share file:
+    const contentToCopy = fullProofUrl
+      ? `${messageText}\n${fullProofUrl}`
+      : messageText;
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(contentToCopy);
+        toast.success("Format pesan bukti transaksi disalin ke clipboard! Membuka grup WhatsApp...");
+      }
+    } catch {
+      // ignore clipboard error
+    }
+
+    window.open(WA_GROUP_LINK, "_blank");
   };
 
   // Manual search filtered list
@@ -418,58 +624,308 @@ export function SalesPosClient({
     );
   });
 
+  const handleDownloadJpg = async () => {
+    if (!receiptRef.current || !completedSale) return;
+    setIsDownloadingJpg(true);
+    try {
+      const canvas = await html2canvas(receiptRef.current, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const link = document.createElement("a");
+      link.href = imgData;
+      link.download = `Invoice_${completedSale.invoiceNo}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Invoice berhasil diunduh dalam format JPG");
+    } catch {
+      toast.error("Gagal mengunduh gambar invoice.");
+    } finally {
+      setIsDownloadingJpg(false);
+    }
+  };
+
+  const formatDate = (isoString?: string) => {
+    if (!isoString) return "-";
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "-";
+    }
+  };
+
+  const formatDateOnly = (isoString?: string | null) => {
+    if (!isoString) return "-";
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return "-";
+    }
+  };
+
+  const cleanCashierName = (name?: string | null) => {
+    if (!name) return "Staff";
+    const trimmed = name.trim();
+    if (/^kasir$/i.test(trimmed)) return "Staff";
+    const cleaned = trimmed.replace(/\bkasir\b/gi, "").replace(/[_]/g, " ").replace(/\s+/g, " ").trim();
+    return cleaned || "Staff";
+  };
+
+  const executePrint = () => {
+    if (!receiptRef.current || !completedSale) {
+      window.print();
+      return;
+    }
+
+    const contentHtml = receiptRef.current.innerHTML;
+    const printWindow = window.open("", "_blank", "width=850,height=950");
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    const isThermal = printFormat === "thermal";
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Invoice_${completedSale.invoiceNo}</title>
+          <meta charset="utf-8" />
+          <style>
+            @page {
+              size: ${isThermal ? "58mm auto" : "A4 portrait"};
+              margin: 0mm !important;
+            }
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              background: #ffffff !important;
+            }
+            p, div, span, h1, h2, h3, h4, h5, h6, table, tr, td, th {
+              margin: 0 !important;
+              padding: 0 !important;
+              line-height: 1.25 !important;
+              box-sizing: border-box !important;
+            }
+            body {
+              font-family: ${
+                isThermal
+                  ? "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+                  : "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+              };
+              ${
+                isThermal
+                  ? `
+                    width: 48mm !important;
+                    max-width: 48mm !important;
+                    font-size: 8.2px !important;
+                    line-height: 1.2 !important;
+                    letter-spacing: -0.03em !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    color: #000000 !important;
+                  `
+                  : `
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 15px;
+                    color: #000000;
+                  `
+              }
+            }
+            .no-print, .print\\:hidden { display: none !important; }
+
+            /* HILANGKAN WATERMARK KETIKA DICETAK (SESUAI PERMINTAAN USER) */
+            .watermark-container, .watermark-row, .watermark-text {
+              display: none !important;
+            }
+
+            ${isThermal ? `
+              /* PADA PRINTER THERMAL: HITAM SOLID PEKAT UNTUK KONTEN UTAMA */
+              .thermal-receipt-body {
+                position: relative !important;
+                z-index: 2 !important;
+              }
+              .thermal-receipt-body, .thermal-receipt-body * {
+                color: #000000 !important;
+                border-color: #000000 !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+              }
+              .border-b, .border-dashed {
+                border-top: none !important;
+                border-left: none !important;
+                border-right: none !important;
+                border-bottom: 1px dashed #000000 !important;
+              }
+              .border-t {
+                border-bottom: none !important;
+                border-left: none !important;
+                border-right: none !important;
+                border-top: 1px solid #000000 !important;
+              }
+              .font-bold, .font-semibold {
+                font-weight: 700 !important;
+              }
+            ` : `
+              .border-b {
+                border-top: none !important;
+                border-left: none !important;
+                border-right: none !important;
+                border-bottom: 1px solid #cbd5e1 !important;
+              }
+              .border-b.border-dashed, .border-dashed {
+                border-top: none !important;
+                border-left: none !important;
+                border-right: none !important;
+                border-bottom: 1px dashed #94a3b8 !important;
+              }
+            `}
+
+            table { width: 100%; border-collapse: collapse; }
+            ${
+              isThermal
+                ? `
+                  th, td { padding: 0 !important; border: none !important; vertical-align: top !important; line-height: 1.2 !important; }
+                  td.align-top { vertical-align: top !important; }
+                `
+                : `
+                  th, td { padding: 8px 10px; text-align: left; }
+                  th { border-bottom: 1px solid #000; font-weight: 700; }
+                  td { border-bottom: 1px solid #000; }
+                `
+            }
+            .align-top { vertical-align: top !important; }
+            .text-right { text-align: right !important; }
+            .text-center { text-align: center !important; }
+            .text-left { text-align: left !important; }
+            .font-bold { font-weight: 700 !important; }
+            .font-semibold { font-weight: 600 !important; }
+            .font-normal { font-weight: 400 !important; }
+            .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; }
+            .uppercase { text-transform: uppercase !important; }
+            .flex { display: flex !important; }
+            .flex-col { flex-direction: column !important; }
+            .flex-1 { flex: 1 1 0% !important; }
+            .min-w-0 { min-width: 0px !important; }
+            .break-words { word-break: break-word !important; }
+            .shrink-0 { flex-shrink: 0 !important; }
+            .justify-between { justify-content: space-between !important; }
+            .justify-center { justify-content: center !important; text-align: center !important; }
+            .justify-end { justify-content: flex-end !important; text-align: right !important; }
+            .items-center { align-items: center !important; }
+            .items-start { align-items: flex-start !important; }
+            .whitespace-pre-line { white-space: pre-line !important; }
+            .whitespace-nowrap { white-space: nowrap !important; }
+            .block { display: block !important; }
+            .inline-block { display: inline-block !important; }
+            .leading-tight { line-height: 1.2 !important; }
+            .line-through { text-decoration: line-through !important; }
+
+            .space-y-0 > * + * { margin-top: 0px !important; }
+            .space-y-0\\.5 > * + * { margin-top: 2px !important; }
+            .space-y-1 > * + * { margin-top: 3px !important; }
+            .space-y-1\\.5 > * + * { margin-top: 4px !important; }
+            .space-y-2 > * + * { margin-top: 6px !important; }
+            .space-y-3 > * + * { margin-top: 10px !important; }
+            .gap-1 { gap: 4px !important; }
+            .gap-2 { gap: 8px !important; }
+            .py-1\\.5 { padding-top: 3px !important; padding-bottom: 3px !important; }
+            .py-2 { padding-top: 4px !important; padding-bottom: 4px !important; }
+            .pb-3 { padding-bottom: 5px !important; }
+            .pt-0\\.5 { padding-top: 2px !important; }
+            .pt-1 { padding-top: 3px !important; }
+            .pt-2 { padding-top: 5px !important; }
+            .pt-3 { padding-top: 6px !important; }
+            .pr-1 { padding-right: 3px !important; }
+            .pl-1 { padding-left: 3px !important; }
+            .text-\\[8px\\] { font-size: 7.8px !important; line-height: 1.15 !important; }
+            .text-\\[8\\.5px\\] { font-size: 8.2px !important; line-height: 1.2 !important; }
+            .text-\\[9px\\] { font-size: 8.2px !important; line-height: 1.2 !important; }
+            .text-\\[9\\.5px\\] { font-size: 8.8px !important; line-height: 1.2 !important; }
+            .text-\\[10px\\] { font-size: 8.2px !important; line-height: 1.2 !important; }
+            .text-\\[10\\.5px\\] { font-size: 9.5px !important; line-height: 1.2 !important; }
+            .text-\\[11px\\] { font-size: 9.5px !important; line-height: 1.2 !important; }
+            .text-xs { font-size: 8.2px !important; line-height: 1.2 !important; }
+            .text-sm { font-size: 9.5px !important; line-height: 1.2 !important; }
+            .text-base { font-size: 10.5px !important; }
+            img { max-width: ${isThermal ? "95px" : "140px"} !important; max-height: ${isThermal ? "28px" : "55px"} !important; height: auto !important; object-fit: contain !important; display: block !important; margin: 0 auto 3px auto !important; }
+            .print-wrapper {
+              position: relative !important;
+              overflow: hidden !important;
+              box-sizing: border-box !important;
+              background: #ffffff !important;
+              ${
+                isThermal
+                  ? `
+                    width: 48mm !important;
+                    max-width: 48mm !important;
+                    margin: 0 !important;
+                    padding: 1mm 2.2mm 3mm 4.8mm !important;
+                  `
+                  : `
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    margin: 0 auto !important;
+                    padding: 0 !important;
+                  `
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-wrapper">
+            ${contentHtml}
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.focus();
+                window.print();
+                window.onafterprint = function() { window.close(); };
+              }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="space-y-4">
       {/* UNIFIED CONTAINER: TRANSAKSI PENJUALAN */}
       <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-        {/* Container Top Header */}
-        <div className="p-4 sm:p-5 border-b border-border bg-muted/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
-              <ShoppingBag className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-foreground">
-                Transaksi Penjualan
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Scan barcode stiker / IMEI atau cari produk. Item otomatis masuk ke daftar belanja.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsManualSearchOpen(true)}
-              className="gap-1.5 rounded-xl text-xs font-semibold h-9"
-            >
-              <Search className="h-3.5 w-3.5" />
-              <span>Cari Manual</span>
-            </Button>
-
-            {cart.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleClearCart}
-                className="text-xs text-destructive hover:text-destructive h-9"
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                <span>Kosongkan</span>
-              </Button>
-            )}
-          </div>
-        </div>
-
         {/* SCAN BARCODE & SEARCH PRODUK INPUT HERO SECTION */}
         <div className="p-4 sm:p-5 bg-primary/5 border-b border-border">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
             <div className="relative flex-1">
-              <ScanBarcode className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-primary" />
+              <ScanBarcode className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-primary pointer-events-none" />
               <Input
                 ref={barcodeInputRef}
                 value={barcodeInput}
@@ -477,8 +933,11 @@ export function SalesPosClient({
                   setBarcodeInput(e.target.value);
                   setIsSearchDropdownOpen(true);
                 }}
+                onClick={() => setIsSearchDropdownOpen(true)}
                 onFocus={() => {
-                  if (barcodeInput.trim()) setIsSearchDropdownOpen(true);
+                  if (hasUserInteractedRef.current) {
+                    setIsSearchDropdownOpen(true);
+                  }
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder="Scan barcode/IMEI atau cari nama produk (mis. iPhone 15, Adaptor 20W)..."
@@ -490,7 +949,7 @@ export function SalesPosClient({
                     type="button"
                     onClick={() => {
                       setBarcodeInput("");
-                      setIsSearchDropdownOpen(false);
+                      setIsSearchDropdownOpen(true);
                       barcodeInputRef.current?.focus();
                     }}
                     className="h-6 w-6 rounded-md hover:bg-muted text-muted-foreground flex items-center justify-center mr-1"
@@ -511,70 +970,109 @@ export function SalesPosClient({
               </div>
 
               {/* LIVE AUTOCOMPLETE DROPDOWN RESULTS */}
-              {isSearchDropdownOpen && searchMatches.length > 0 && (
+              {isSearchDropdownOpen && (
                 <div
                   ref={searchDropdownRef}
                   className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-popover text-popover-foreground border border-border shadow-xl rounded-xl overflow-hidden divide-y divide-border/60 max-h-80 overflow-y-auto"
                 >
-                  <div className="p-2 bg-muted/50 text-[11px] font-semibold text-muted-foreground">
-                    <span>Hasil Pencarian ({searchMatches.length})</span>
+                  <div className="p-2.5 bg-muted/60 text-[11px] font-semibold text-muted-foreground flex items-center justify-between border-b border-border/50">
+                    <span>
+                      {barcodeInput.trim()
+                        ? `Hasil Pencarian (${searchMatches.length})`
+                        : `Daftar Produk Tersedia (${searchMatches.length})`}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/80">
+                      Klik produk untuk memasukkan ke keranjang
+                    </span>
                   </div>
-                  {searchMatches.map((p) => {
-                    const isSold = p.status === "sold" || p.stock <= 0;
-                    return (
-                      <div
-                        key={p.id}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          if (!isSold) {
-                            addItemToTransaction(p);
-                            setBarcodeInput("");
-                            setIsSearchDropdownOpen(false);
-                            barcodeInputRef.current?.focus();
-                          }
-                        }}
-                        className={`p-3 flex items-center justify-between transition select-none ${
-                          isSold
-                            ? "opacity-50 cursor-not-allowed bg-muted/20"
-                            : "hover:bg-primary/10 cursor-pointer"
-                        }`}
-                      >
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-foreground">{p.name}</span>
-                            {p.productType === "phone" ? (
-                              <Badge variant="outline" className="text-[10px] h-4 py-0 px-1 border-primary/30 text-primary">
-                                HP
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px] h-4 py-0 px-1 border-muted-foreground/30 text-muted-foreground">
-                                Aksesoris
-                              </Badge>
-                            )}
+
+                  {searchMatches.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-muted-foreground">
+                      {barcodeInput.trim()
+                        ? `Tidak ada produk yang cocok dengan "${barcodeInput}".`
+                        : "Belum ada data produk tersedia."}
+                    </div>
+                  ) : (
+                    searchMatches.map((p) => {
+                      const isSold = p.status === "sold" || p.stock <= 0;
+                      return (
+                        <div
+                          key={p.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            if (!isSold) {
+                              addItemToTransaction(p);
+                              setBarcodeInput("");
+                              setIsSearchDropdownOpen(false);
+                              barcodeInputRef.current?.focus();
+                            }
+                          }}
+                          className={`p-3 flex items-center justify-between transition select-none ${
+                            isSold
+                              ? "opacity-50 cursor-not-allowed bg-muted/20"
+                              : "hover:bg-primary/10 cursor-pointer"
+                          }`}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-foreground">
+                                {p.name}
+                              </span>
+                              {p.productType === "phone" ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] h-4 py-0 px-1 border-primary/30 text-primary"
+                                >
+                                  HP
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] h-4 py-0 px-1 border-muted-foreground/30 text-muted-foreground"
+                                >
+                                  Aksesoris
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground font-mono">
+                              {p.imei ? `IMEI: ${p.imei}` : `SKU: ${p.sku}`}
+                              {p.capacity ? ` • ${p.capacity}` : ""}
+                              {p.color ? ` • ${p.color}` : ""}
+                              {p.brandName ? ` • ${p.brandName}` : ""}
+                            </p>
                           </div>
-                          <p className="text-[11px] text-muted-foreground font-mono">
-                            {p.imei ? `IMEI: ${p.imei}` : `SKU: ${p.sku}`}
-                            {p.capacity ? ` • ${p.capacity}` : ""}
-                            {p.color ? ` • ${p.color}` : ""}
-                            {p.brandName ? ` • ${p.brandName}` : ""}
-                          </p>
+                          <div className="text-right">
+                            <p className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                              {formatRupiah(p.sellingPrice)}
+                            </p>
+                            <span
+                              className={`text-[10px] ${isSold ? "text-destructive font-semibold" : "text-muted-foreground"}`}
+                            >
+                              {isSold
+                                ? "Stok Habis / Terjual"
+                                : `Stok: ${p.stock}`}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                            {formatRupiah(p.sellingPrice)}
-                          </p>
-                          <span className={`text-[10px] ${isSold ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
-                            {isSold ? "Stok Habis / Terjual" : `Stok: ${p.stock}`}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="flex gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {/* <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsManualSearchOpen(true)}
+                className="h-12 px-3 sm:px-4 rounded-xl border-primary/30 text-primary hover:bg-primary/10 font-bold gap-2"
+                title="Cari Manual Produk"
+              >
+                <Search className="h-4 w-4" />
+                <span>Cari Manual</span>
+              </Button> */}
+
               <Button
                 type="button"
                 variant="outline"
@@ -600,7 +1098,9 @@ export function SalesPosClient({
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    const toastId = toast.loading("Membaca barcode dari foto...");
+                    const toastId = toast.loading(
+                      "Membaca barcode dari foto...",
+                    );
                     try {
                       const val = await scanBarcodeFromFile(file);
                       if (val) {
@@ -609,17 +1109,32 @@ export function SalesPosClient({
                       } else {
                         toast.error(
                           "Barcode tidak terdeteksi. Silakan foto barcode lebih dekat dan jelas.",
-                          { id: toastId }
+                          { id: toastId },
                         );
                       }
                     } catch {
-                      toast.error("Gagal membaca barcode dari foto.", { id: toastId });
+                      toast.error("Gagal membaca barcode dari foto.", {
+                        id: toastId,
+                      });
                     } finally {
                       e.target.value = "";
                     }
                   }}
                 />
               </label>
+
+              {cart.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleClearCart}
+                  className="h-12 px-3 text-xs text-destructive hover:text-destructive hover:bg-destructive/10 rounded-xl font-medium"
+                  title="Kosongkan Keranjang"
+                >
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  <span>Kosongkan</span>
+                </Button>
+              )}
             </div>
           </div>
           <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-2 px-1">
@@ -636,33 +1151,55 @@ export function SalesPosClient({
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/30">
-                <TableHead className="w-12 text-center text-xs font-semibold">No</TableHead>
-                <TableHead className="text-xs font-semibold whitespace-nowrap">Barcode / IMEI</TableHead>
-                <TableHead className="text-xs font-semibold min-w-[200px]">Nama Produk / Spesifikasi</TableHead>
-                <TableHead className="text-xs font-semibold text-right whitespace-nowrap">Harga Satuan</TableHead>
-                <TableHead className="text-xs font-semibold text-center w-32 whitespace-nowrap">Qty</TableHead>
-                <TableHead className="text-xs font-semibold text-right whitespace-nowrap">Subtotal</TableHead>
+                <TableHead className="w-12 text-center text-xs font-semibold">
+                  No
+                </TableHead>
+                <TableHead className="text-xs font-semibold whitespace-nowrap">
+                  Barcode / IMEI
+                </TableHead>
+                <TableHead className="text-xs font-semibold min-w-[200px]">
+                  Nama Produk / Spesifikasi
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-right whitespace-nowrap">
+                  Harga Satuan
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-center w-32 whitespace-nowrap">
+                  Qty
+                </TableHead>
+                <TableHead className="text-xs font-semibold text-right whitespace-nowrap">
+                  Subtotal
+                </TableHead>
                 <TableHead className="w-12 text-center text-xs font-semibold"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {cart.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-16 text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center py-16 text-muted-foreground"
+                  >
                     <ScanBarcode className="h-12 w-12 mx-auto text-muted-foreground/30 mb-2" />
-                    <p className="font-semibold text-sm text-foreground">Transaksi Masih Kosong</p>
+                    <p className="font-semibold text-sm text-foreground">
+                      Transaksi Masih Kosong
+                    </p>
                     <p className="text-xs mt-1">
-                      Arahkan barcode scanner ke stiker IMEI handphone atau masukkan kode SKU untuk memulai transaksi.
+                      Arahkan barcode scanner ke stiker IMEI handphone atau
+                      masukkan kode SKU untuk memulai transaksi.
                     </p>
                   </TableCell>
                 </TableRow>
               ) : (
                 cart.map((item, idx) => {
-                  const isPhone = (item.product.productType || "phone") === "phone";
+                  const isPhone =
+                    (item.product.productType || "phone") === "phone";
                   const itemSubtotal = item.product.sellingPrice * item.qty;
 
                   return (
-                    <TableRow key={item.product.id} className="hover:bg-muted/20 transition-colors text-xs">
+                    <TableRow
+                      key={item.product.id}
+                      className="hover:bg-muted/20 transition-colors text-xs"
+                    >
                       <TableCell className="text-center font-mono text-muted-foreground">
                         {idx + 1}
                       </TableCell>
@@ -715,7 +1252,9 @@ export function SalesPosClient({
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => handleUpdateQty(item.product.id, item.qty - 1)}
+                              onClick={() =>
+                                handleUpdateQty(item.product.id, item.qty - 1)
+                              }
                               className="h-6 w-6 rounded-md bg-muted hover:bg-muted/80 flex items-center justify-center text-foreground"
                             >
                               <Minus className="h-3 w-3" />
@@ -725,7 +1264,9 @@ export function SalesPosClient({
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleUpdateQty(item.product.id, item.qty + 1)}
+                              onClick={() =>
+                                handleUpdateQty(item.product.id, item.qty + 1)
+                              }
                               className="h-6 w-6 rounded-md bg-muted hover:bg-muted/80 flex items-center justify-center text-foreground"
                             >
                               <Plus className="h-3 w-3" />
@@ -764,17 +1305,62 @@ export function SalesPosClient({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* Left Settings: Pelanggan & Metode Pembayaran */}
               <div className="lg:col-span-6 space-y-4">
-                {/* Customer Manual Input */}
+                {/* Customer Manual Input (Wajib) */}
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
                     <User className="h-3.5 w-3.5 text-primary" />
                     <span>Nama Pelanggan</span>
+                    <span className="text-rose-500 font-bold">*</span>
+                    <span className="text-[10px] text-rose-500 font-normal lowercase">
+                      (wajib)
+                    </span>
                   </label>
                   <Input
+                    list="pos-customer-list"
                     value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Nama pelanggan (default: Pelanggan Umum)..."
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomerName(val);
+                      const matched = customers.find(
+                        (c) =>
+                          c.name.toLowerCase() === val.trim().toLowerCase(),
+                      );
+                      if (matched && matched.phone && !customerPhone) {
+                        setCustomerPhone(matched.phone);
+                      }
+                    }}
+                    placeholder="Nama lengkap pelanggan (wajib diisi)..."
                     className="h-10 text-xs rounded-xl bg-background border-input"
+                    required
+                  />
+                  {customers && customers.length > 0 && (
+                    <datalist id="pos-customer-list">
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.phone ? `${c.name} (${c.phone})` : c.name}
+                        </option>
+                      ))}
+                    </datalist>
+                  )}
+                </div>
+
+                {/* Customer Phone (Wajib) */}
+                <div>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5 text-primary" />
+                    <span>No. Telepon Pelanggan</span>
+                    <span className="text-rose-500 font-bold">*</span>
+                    <span className="text-[10px] text-rose-500 font-normal lowercase">
+                      (wajib)
+                    </span>
+                  </label>
+                  <Input
+                    type="tel"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="Nomor telepon / WhatsApp pelanggan (wajib diisi)..."
+                    className="h-10 text-xs rounded-xl bg-background border-input"
+                    required
                   />
                 </div>
 
@@ -848,7 +1434,9 @@ export function SalesPosClient({
                       <CurrencyInput
                         placeholder="0"
                         value={cashAmount}
-                        onValueChange={(val) => setCashAmount(val === 0 ? "" : val)}
+                        onValueChange={(val) =>
+                          setCashAmount(val === 0 ? "" : val)
+                        }
                         className="h-8 text-xs font-mono font-bold"
                       />
                     </div>
@@ -868,12 +1456,16 @@ export function SalesPosClient({
               <div className="lg:col-span-6 space-y-3 bg-background p-4 rounded-2xl border border-border">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Total Item:</span>
-                  <span className="font-semibold text-foreground">{totalUnits} Unit</span>
+                  <span className="font-semibold text-foreground">
+                    {totalUnits} Unit
+                  </span>
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Subtotal:</span>
-                  <span className="font-mono font-semibold text-foreground">{formatRupiah(subtotal)}</span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {formatRupiah(subtotal)}
+                  </span>
                 </div>
 
                 {/* Diskon */}
@@ -891,15 +1483,30 @@ export function SalesPosClient({
                 </div>
 
                 {/* Biaya Tambahan */}
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Biaya Tambahan:</span>
-                  <div className="flex items-center gap-1 w-32">
-                    <span className="text-[10px]">Rp</span>
-                    <CurrencyInput
-                      value={additionalFee}
-                      onValueChange={(val) => setAdditionalFee(val)}
-                      placeholder="0"
-                      className="h-7 text-xs font-mono text-right"
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Biaya Tambahan:</span>
+                    <div className="flex items-center gap-1 w-32">
+                      <span className="text-[10px]">Rp</span>
+                      <CurrencyInput
+                        value={additionalFee}
+                        onValueChange={(val) => setAdditionalFee(val)}
+                        placeholder="0"
+                        className="h-7 text-xs font-mono text-right"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Keterangan Biaya Tambahan */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground font-medium block">
+                      Keterangan :
+                    </label>
+                    <Input
+                      value={additionalFeeNote}
+                      onChange={(e) => setAdditionalFeeNote(e.target.value)}
+                      placeholder="Contoh: COD, JNE, dll..."
+                      className="h-7 text-[11px] rounded-lg bg-background border-input"
                     />
                   </div>
                 </div>
@@ -916,11 +1523,17 @@ export function SalesPosClient({
                         type="number"
                         min={0}
                         value={warrantyDays}
-                        onChange={(e) => setWarrantyDays(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        onChange={(e) =>
+                          setWarrantyDays(
+                            Math.max(0, parseInt(e.target.value, 10) || 0),
+                          )
+                        }
                         placeholder="0"
                         className="h-7 text-xs font-mono text-right w-16"
                       />
-                      <span className="text-[11px] font-semibold text-foreground">Hari</span>
+                      <span className="text-[11px] font-semibold text-foreground">
+                        Hari
+                      </span>
                     </div>
                   </div>
                   {/* Preset Cepat Garansi */}
@@ -949,7 +1562,9 @@ export function SalesPosClient({
                 </div>
 
                 <div className="pt-2 border-t border-border flex items-baseline justify-between">
-                  <span className="text-sm font-bold text-foreground">Total Tagihan:</span>
+                  <span className="text-sm font-bold text-foreground">
+                    Total Tagihan:
+                  </span>
                   <span className="text-2xl font-mono font-extrabold text-primary">
                     {formatRupiah(total)}
                   </span>
@@ -962,7 +1577,11 @@ export function SalesPosClient({
                   className="w-full h-12 text-sm font-bold bg-primary text-primary-foreground rounded-xl shadow-md shadow-primary/20 hover:bg-primary/90 mt-2"
                 >
                   <CheckCircle2 className="h-4 w-4 mr-2" />
-                  <span>{isProcessing ? "Menyimpan Transaksi..." : "Selesaikan Transaksi & Cetak Faktur"}</span>
+                  <span>
+                    {isProcessing
+                      ? "Menyimpan Transaksi..."
+                      : "Selesaikan Transaksi & Cetak Faktur"}
+                  </span>
                 </Button>
               </div>
             </div>
@@ -983,7 +1602,9 @@ export function SalesPosClient({
       <Dialog open={isManualSearchOpen} onOpenChange={setIsManualSearchOpen}>
         <DialogContent className="sm:max-w-xl p-6">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold">Pilih Produk Manual</DialogTitle>
+            <DialogTitle className="text-lg font-bold">
+              Pilih Produk Manual
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 pt-2">
@@ -1010,7 +1631,9 @@ export function SalesPosClient({
                     <div
                       key={p.id}
                       className={`p-2.5 px-3 flex items-center justify-between transition ${
-                        isSold ? "opacity-50 cursor-not-allowed" : "hover:bg-muted/40 cursor-pointer"
+                        isSold
+                          ? "opacity-50 cursor-not-allowed"
+                          : "hover:bg-muted/40 cursor-pointer"
                       }`}
                       onClick={() => {
                         if (!isSold) {
@@ -1021,9 +1644,12 @@ export function SalesPosClient({
                       }}
                     >
                       <div>
-                        <p className="text-xs font-bold text-foreground">{p.name}</p>
+                        <p className="text-xs font-bold text-foreground">
+                          {p.name}
+                        </p>
                         <p className="text-[10px] text-muted-foreground font-mono">
-                          {p.imei ? `IMEI: ${p.imei}` : `SKU: ${p.sku}`} • {p.capacity || ""} {p.color || ""}
+                          {p.imei ? `IMEI: ${p.imei}` : `SKU: ${p.sku}`} •{" "}
+                          {p.capacity || ""} {p.color || ""}
                         </p>
                       </div>
 
@@ -1044,106 +1670,667 @@ export function SalesPosClient({
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: STRUK INVOICE TRANSAKSI SELESAI */}
-      {completedSale && (
-        <Dialog open={!!completedSale} onOpenChange={() => setCompletedSale(null)}>
-          <DialogContent className="sm:max-w-md p-6">
-            <DialogHeader>
-              <DialogTitle className="text-center font-bold text-lg text-emerald-600 flex items-center justify-center gap-2">
-                <CheckCircle2 className="h-5 w-5" />
-                <span>Transaksi Berhasil</span>
+      {/* MODAL TRANSAKSI BERHASIL (STAFF MARKETING - TANPA CETAK, UPLOAD BUKTI & WA) */}
+      {completedSale && currentUserRole === "admin_kasir" && (
+        <Dialog
+          open={!!completedSale}
+          onOpenChange={(open) => {
+            if (!open) {
+              uploadedProofFileRef.current = null;
+              setCompletedSale(null);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto p-5 sm:p-6">
+            <DialogHeader className="text-center sm:text-center pb-2 border-b border-border">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 mb-2">
+                <CheckCircle2 className="h-7 w-7" />
+              </div>
+              <DialogTitle className="text-lg font-bold text-center">
+                Transaksi Berhasil!
               </DialogTitle>
+              <p className="text-xs text-muted-foreground text-center">
+                Faktur: <span className="font-mono font-semibold text-foreground">{completedSale.invoiceNo}</span> • {completedSale.date}
+              </p>
             </DialogHeader>
 
-            {/* Printable Receipt Layout */}
-            <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-border text-xs space-y-3 font-mono">
-              <div className="text-center border-b border-border pb-2">
-                <p className="font-extrabold text-sm uppercase text-[#055B5A]">GLORIA PONSEL</p>
-                <p className="text-[10px] text-muted-foreground">Spesialis Smartphone & Aksesoris</p>
-                <p className="text-[10px] text-muted-foreground font-semibold mt-1">
-                  Faktur: {completedSale.invoiceNo}
-                </p>
-                <p className="text-[10px] text-muted-foreground">{completedSale.date}</p>
-                <p className="text-[10px] text-foreground font-semibold mt-0.5">
-                  Pelanggan: {completedSale.customerName || "Pelanggan Umum"}
-                </p>
+            <div className="space-y-4 py-2">
+              {/* Ringkasan Transaksi */}
+              <div className="rounded-xl border border-border bg-muted/30 p-3.5 text-xs space-y-2.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Pelanggan:</span>
+                  <span className="font-semibold text-foreground">
+                    {completedSale.customerName || "Pelanggan Umum"}
+                    {completedSale.customerPhone ? ` (${completedSale.customerPhone})` : ""}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Kasir:</span>
+                  <span className="font-semibold text-foreground">
+                    {completedSale.cashierName || "Staff Marketing"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Metode Pembayaran:</span>
+                  <Badge variant="outline" className="uppercase text-[10px] font-bold">
+                    {completedSale.paymentMethod}
+                  </Badge>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-border">
+                  <span className="font-semibold text-foreground">Total Transaksi:</span>
+                  <span className="font-mono text-base font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {formatRupiah(completedSale.total)}
+                  </span>
+                </div>
               </div>
 
-              <div className="space-y-1.5 divide-y divide-border/60">
-                {completedSale.items.map((item) => (
-                  <div key={item.product.id} className="pt-1 flex justify-between text-[11px]">
-                    <div>
-                      <p className="font-bold">{item.product.name}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {item.product.imei || item.product.sku} ({item.qty}x)
-                      </p>
+              {/* Upload Bukti Pembayaran (Otomatis Tersimpan & Tanpa Preview) */}
+              <div className="rounded-xl border border-border p-3.5 space-y-2.5 bg-card">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
+                    <UploadCloud className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    Upload Bukti Pembayaran
+                  </span>
+                  {completedSale.paymentProofUrl ? (
+                    <Badge variant="outline" className="text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 gap-1 font-bold">
+                      <CheckCircle2 className="w-3 h-3" /> Tersimpan
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300">
+                      Belum Ada
+                    </Badge>
+                  )}
+                </div>
+
+                {isUploadingPosProof ? (
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-xs text-indigo-700 dark:text-indigo-300">
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0 text-indigo-600" />
+                    <span className="font-medium">Sedang mengunggah dan menyimpan bukti pembayaran...</span>
+                  </div>
+                ) : completedSale.paymentProofUrl ? (
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs">
+                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <span>Bukti pembayaran berhasil tersimpan</span>
                     </div>
-                    <span className="font-bold">
-                      {formatRupiah(item.product.sellingPrice * item.qty)}
+                    <label className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer shrink-0">
+                      <span>Ganti Foto</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleAutoUploadProof(f);
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleAutoUploadProof(f);
+                      }}
+                      disabled={isUploadingPosProof}
+                      className="block w-full text-xs text-slate-500
+                        file:mr-2.5 file:py-2 file:px-3
+                        file:rounded-lg file:border-0
+                        file:text-xs file:font-semibold
+                        file:bg-indigo-50 file:text-indigo-700
+                        hover:file:bg-indigo-100
+                        dark:file:bg-indigo-950 dark:file:text-indigo-300
+                        cursor-pointer border border-border rounded-xl p-1 bg-muted/20"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1 px-1">
+                      Pilih file atau ambil dari kamera. Foto langsung otomatis tersimpan ke sistem.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Kirim Bukti Transaksi ke Grup WhatsApp */}
+              <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 p-3.5 space-y-2.5">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
+                    <Share2 className="w-4 h-4 text-[#25D366]" />
+                    Kirim Bukti ke Grup WhatsApp
+                  </span>
+                  <p className="text-[11px] text-muted-foreground">
+                    Pesan otomatis: <span className="font-mono text-foreground font-semibold">bukti transaksi [{completedSale.invoiceNo}]</span>
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleSendWhatsAppGroup}
+                  disabled={isUploadingPosProof}
+                  className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-xs h-10 gap-2 shadow-xs"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Kirim Bukti ke Grup WhatsApp</span>
+                </Button>
+                <p className="text-[10px] text-emerald-800/80 dark:text-emerald-300/80 text-center">
+                  Format pesan otomatis disalin ke clipboard dan Anda langsung diarahkan ke Grup WhatsApp.
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-3 border-t border-border">
+              <Button
+                type="button"
+                onClick={() => {
+                  uploadedProofFileRef.current = null;
+                  setCompletedSale(null);
+                }}
+                className="w-full bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-bold text-xs h-9"
+              >
+                Selesai & Transaksi Baru
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* MODAL: PRATINJAU & CETAK INVOICE TRANSAKSI SELESAI (OWNER / SUPER ADMIN) */}
+      {completedSale && currentUserRole !== "admin_kasir" && (
+        <Dialog
+          open={!!completedSale}
+          onOpenChange={() => setCompletedSale(null)}
+        >
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-6">
+            <DialogHeader className="border-b border-border pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <DialogTitle className="text-base font-bold flex items-center gap-2">
+                    <Printer className="h-4 w-4 text-primary" />
+                    <span>Pratinjau Cetak Faktur</span>
+                  </DialogTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Invoice:{" "}
+                    <span className="font-mono font-semibold">
+                      {completedSale.invoiceNo}
+                    </span>
+                  </p>
+                </div>
+
+                {/* Switch Format Cetak: Standar vs Thermal */}
+                <div className="flex items-center gap-1 p-1 bg-muted rounded-xl border border-border text-xs w-fit">
+                  <button
+                    type="button"
+                    onClick={() => setPrintFormat("standard")}
+                    className={`px-3 py-1 rounded-lg font-semibold transition ${
+                      printFormat === "standard"
+                        ? "bg-background text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Faktur Standar (A4)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintFormat("thermal")}
+                    className={`px-3 py-1 rounded-lg font-semibold transition ${
+                      printFormat === "thermal"
+                        ? "bg-background text-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Struk Thermal (58/80mm)
+                  </button>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {/* AREA DOKUMEN CETAK (PRINTABLE CONTAINER) */}
+            <div
+              ref={receiptRef}
+              className={`relative overflow-hidden rounded-xl border border-border p-4 transition ${
+                printFormat === "thermal"
+                  ? "max-w-[340px] mx-auto bg-white dark:bg-zinc-900 font-mono text-[11px] text-slate-900 dark:text-zinc-100 shadow-inner"
+                  : "bg-white text-slate-800 shadow-sm p-6"
+              }`}
+            >
+              {/* WATERMARK DIAGONAL GLORIA PONSEL (TAMPIL DI PREVIEW & CETAK) */}
+              <div className="watermark-container pointer-events-none select-none absolute inset-0 z-0 flex flex-col justify-between overflow-hidden py-3">
+                {[...Array(10)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`watermark-row flex justify-around items-center whitespace-nowrap w-[140%] ${
+                      i % 2 === 0 ? "-ml-8" : "-ml-2"
+                    }`}
+                  >
+                    <span className="watermark-text transform -rotate-25 font-black text-[11px] tracking-[0.2em] text-[#055B5A]/15 uppercase whitespace-nowrap">
+                      GLORIA PONSEL
+                    </span>
+                    <span className="watermark-text transform -rotate-25 font-black text-[11px] tracking-[0.2em] text-[#055B5A]/15 uppercase whitespace-nowrap">
+                      GLORIA PONSEL
+                    </span>
+                    <span className="watermark-text transform -rotate-25 font-black text-[11px] tracking-[0.2em] text-[#055B5A]/15 uppercase whitespace-nowrap">
+                      GLORIA PONSEL
                     </span>
                   </div>
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-border space-y-1 text-right">
-                <div className="flex justify-between text-muted-foreground text-[10px]">
-                  <span>Subtotal:</span>
-                  <span>{formatRupiah(completedSale.subtotal)}</span>
-                </div>
-                {completedSale.discount > 0 && (
-                  <div className="flex justify-between text-destructive text-[10px]">
-                    <span>Diskon:</span>
-                    <span>-{formatRupiah(completedSale.discount)}</span>
+              {/* === TAMPILAN FORMAT THERMAL (STRUKTUR IDENTIK PRATINJAU PENGATURAN PROFIL/TOKO) === */}
+              {printFormat === "thermal" ? (
+                <div className="relative z-10 thermal-receipt-body space-y-0 text-[8.5px] font-mono text-slate-900 dark:text-zinc-100">
+                  {/* Header Toko Thermal */}
+                  <div className="text-center space-y-0.5 border-b border-dashed border-slate-300 pb-2.5">
+                    {(storeSettings?.logoUrl || "/logoGP.png") && (
+                      <div className="flex justify-center mb-1.5">
+                        <img
+                          src={storeSettings?.logoUrl || "/logoGP.png"}
+                          alt="Logo"
+                          className="h-8 max-w-[120px] object-contain"
+                        />
+                      </div>
+                    )}
+                    <p className="font-bold text-[11px] uppercase">
+                      {storeSettings?.storeName || "GLORIA PONSEL"}
+                    </p>
+                    <div className="text-[8.5px] text-slate-600 dark:text-zinc-400 whitespace-pre-line leading-tight">
+                      {(storeSettings?.address || "Alamat Toko")
+                        .replace(/\r\n/g, "\n")
+                        .split("\n")
+                        .map((line: string, idx: number) => (
+                          <span key={idx} className="block">
+                            {line || "\u00A0"}
+                          </span>
+                        ))}
+                    </div>
+                    <p className="text-[8.5px] text-slate-600 dark:text-zinc-400">
+                      Telp: {storeSettings?.phone || "-"}
+                    </p>
                   </div>
-                )}
-                {completedSale.additionalFee && completedSale.additionalFee > 0 ? (
-                  <div className="flex justify-between text-primary text-[10px]">
-                    <span>Biaya Tambahan:</span>
-                    <span>+{formatRupiah(completedSale.additionalFee)}</span>
-                  </div>
-                ) : null}
-                <div className="flex justify-between text-xs font-bold text-foreground pt-1 border-t border-dashed border-border">
-                  <span>TOTAL:</span>
-                  <span className="text-emerald-600">{formatRupiah(completedSale.total)}</span>
-                </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>Metode:</span>
-                  <span className="uppercase">{completedSale.paymentMethod}</span>
-                </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>Garansi Toko:</span>
-                  <span className="font-semibold text-foreground">
-                    {completedSale.warrantyDays && completedSale.warrantyDays > 0
-                      ? `${completedSale.warrantyDays} Hari`
-                      : "Tanpa Garansi"}
-                  </span>
-                </div>
-              </div>
 
-              <p className="text-[10px] text-center text-muted-foreground pt-2 border-t border-border">
-                Terima kasih telah berbelanja di Gloria Ponsel!
-              </p>
+                  {/* Meta Transaksi Thermal (Format Identik Preview Pengaturan Toko) */}
+                  <div className="py-2 border-b border-dashed border-slate-300 space-y-0.5 text-[8.5px] text-slate-600 dark:text-zinc-400">
+                    <div className="text-center">
+                      <span>{completedSale.date}</span>
+                    </div>
+                    <div className="text-center font-bold text-slate-900 dark:text-zinc-100">
+                      <span>{completedSale.invoiceNo}</span>
+                    </div>
+                    <table className="w-full border-collapse pt-0.5" style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <tbody>
+                        <tr>
+                          <td className="align-top text-left text-[8.5px] text-slate-600 dark:text-zinc-400 p-0 whitespace-nowrap">
+                            Kasir: {cleanCashierName(completedSale.cashierName)}
+                          </td>
+                          <td className="align-top text-right text-[8.5px] text-slate-600 dark:text-zinc-400 p-0 pl-1 whitespace-nowrap">
+                            Pelanggan: {completedSale.customerName || "Pelanggan Umum"}
+                          </td>
+                        </tr>
+                        {completedSale.customerPhone && (
+                          <tr>
+                            <td colSpan={2} className="text-right text-[8px] text-slate-500 dark:text-zinc-400 p-0 pt-0.5 whitespace-nowrap">
+                              {completedSale.customerPhone}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Rincian Item Thermal (Format Identik Preview Pengaturan Toko) */}
+                  <div className="py-2 border-b border-dashed border-slate-300 space-y-1.5">
+                    {completedSale.items.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="space-y-0.5"
+                      >
+                        <table
+                          className="w-full border-collapse"
+                          style={{ width: "100%", borderCollapse: "collapse" }}
+                        >
+                          <tbody>
+                            <tr>
+                              <td className="align-top text-left p-0 pr-1">
+                                <span className="font-semibold break-words text-slate-900 dark:text-zinc-100 leading-tight block">
+                                  {item.product.name}
+                                </span>
+                              </td>
+                              <td className="align-top text-right p-0 pl-1 whitespace-nowrap font-bold text-slate-900 dark:text-zinc-100 text-[8.5px]">
+                                {formatRupiah(item.product.sellingPrice * item.qty)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        {(item.product.capacity || item.product.color) && (
+                          <div className="text-[8px] text-slate-500 dark:text-zinc-400 leading-tight">
+                            {[item.product.capacity, item.product.color]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </div>
+                        )}
+                        {(item.product.imei || item.product.sku) && (
+                          <div className="text-[8px] font-mono text-slate-600 dark:text-zinc-400 leading-tight">
+                            IMEI: {item.product.imei || item.product.sku}
+                          </div>
+                        )}
+                        <div className="text-[8.5px] text-slate-600 dark:text-zinc-400 leading-tight pt-0.5">
+                          {item.qty} x {formatRupiah(item.product.sellingPrice)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Ringkasan Total & Pembayaran Thermal */}
+                  <div className="py-2 border-b border-dashed border-slate-300">
+                    <table className="w-full border-collapse text-[8.5px]" style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <tbody>
+                        {completedSale.discount > 0 && (
+                          <>
+                            <tr>
+                              <td className="text-left text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">Subtotal</td>
+                              <td className="text-right text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">{formatRupiah(completedSale.subtotal)}</td>
+                            </tr>
+                            <tr>
+                              <td className="text-left text-rose-600 p-0 pb-0.5 whitespace-nowrap">Diskon</td>
+                              <td className="text-right text-rose-600 p-0 pb-0.5 whitespace-nowrap">-{formatRupiah(completedSale.discount)}</td>
+                            </tr>
+                          </>
+                        )}
+                        {completedSale.additionalFee && completedSale.additionalFee > 0 ? (
+                          <tr>
+                            <td className="text-left text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">Biaya Lain</td>
+                            <td className="text-right text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">+{formatRupiah(completedSale.additionalFee)}</td>
+                          </tr>
+                        ) : null}
+                        <tr>
+                          <td className="text-left font-bold text-[9.5px] pt-1 pb-0.5 text-slate-900 dark:text-zinc-100 whitespace-nowrap">TOTAL</td>
+                          <td className="text-right font-bold text-[10.5px] tracking-tight pt-1 pb-0.5 text-slate-900 dark:text-zinc-100 whitespace-nowrap">{formatRupiah(completedSale.total)}</td>
+                        </tr>
+                        <tr>
+                          <td className="text-left text-slate-600 dark:text-zinc-400 pt-0.5 pb-0.5 whitespace-nowrap">Metode Bayar</td>
+                          <td className="text-right uppercase font-semibold text-slate-800 dark:text-zinc-200 pt-0.5 pb-0.5 whitespace-nowrap">
+                            {completedSale.paymentMethod} (LUNAS)
+                          </td>
+                        </tr>
+                        {completedSale.warrantyDays && completedSale.warrantyDays > 0 ? (
+                          <tr>
+                            <td className="align-top text-left text-slate-600 dark:text-zinc-400 pt-0.5 whitespace-nowrap">Garansi Toko</td>
+                            <td className="align-top text-right font-semibold text-slate-800 dark:text-zinc-200 pt-0.5 whitespace-nowrap">
+                              {completedSale.warrantyDays} Hari
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Catatan Footer Struk Thermal */}
+                  <div className="pt-2.5 text-center space-y-1">
+                    <p className="whitespace-pre-line text-[8.5px] text-slate-600 dark:text-zinc-400 leading-tight">
+                      {storeSettings?.receiptFooter ||
+                        "Terima kasih atas kunjungan Anda!\nBarang yang sudah dibeli tidak dapat ditukar."}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                /* === TAMPILAN FORMAT STANDAR A4 === */
+                <div className="relative z-10 space-y-5 text-slate-800">
+                  {/* Kop Surat / Header Faktur */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start gap-4 border-b-2 border-slate-900 pb-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        {storeSettings?.logoUrl || "/logoGP.png" ? (
+                          <img
+                            src={storeSettings?.logoUrl || "/logoGP.png"}
+                            alt="Logo"
+                            className="h-8 max-w-[120px] object-contain"
+                          />
+                        ) : (
+                          <Store className="h-6 w-6 text-[#055B5A]" />
+                        )}
+                        <h2 className="text-2xl font-black tracking-tight text-[#055B5A]">
+                          {storeSettings?.storeName || "GLORIA PONSEL"}
+                        </h2>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5 whitespace-pre-line leading-relaxed">
+                        {(storeSettings?.address || "Jl. Toko Gloria Ponsel")
+                          .replace(/\r\n/g, "\n")
+                          .split("\n")
+                          .map((line: string, idx: number) => (
+                            <span key={idx} className="block">
+                              {line || "\u00A0"}
+                            </span>
+                          ))}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Telp/WA: {storeSettings?.phone || "0812-3456-7890"}
+                      </p>
+                    </div>
+
+                    <div className="text-right sm:self-center">
+                      <span className="inline-block px-3 py-1 rounded bg-[#055B5A] text-white font-extrabold text-xs tracking-wider uppercase">
+                        FAKTUR PENJUALAN
+                      </span>
+                      <p className="font-mono font-bold text-base text-slate-900 mt-1">
+                        {completedSale.invoiceNo}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Tanggal: {completedSale.date}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Informasi Pelanggan & Kasir */}
+                  <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <div>
+                      <p className="text-slate-400 font-semibold uppercase text-[10px]">
+                        Ditujukan Kepada:
+                      </p>
+                      <p className="font-bold text-sm text-slate-900 mt-0.5">
+                        {completedSale.customerName || "Pelanggan Umum"}
+                      </p>
+                      <p className="text-slate-600 mt-0.5">
+                        No. Telepon: {completedSale.customerPhone || "-"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-slate-400 font-semibold uppercase text-[10px]">
+                        Petugas Kasir:
+                      </p>
+                      <p className="font-bold text-sm text-slate-900 mt-0.5">
+                        {completedSale.cashierName || "Kasir"}
+                      </p>
+                      <p className="text-slate-600 mt-0.5">
+                        Status Pembayaran:{" "}
+                        <span className="font-bold text-emerald-700 uppercase">
+                          LUNAS ({completedSale.paymentMethod})
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Tabel Rincian Barang A4 */}
+                  <div className="rounded-lg border border-slate-200 overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-100 text-slate-700 border-b border-slate-300">
+                        <tr>
+                          <th className="py-2 px-3 text-center w-10">No</th>
+                          <th className="py-2 px-3">Nama Produk / Unit</th>
+                          <th className="py-2 px-3">No. IMEI / Barcode</th>
+                          <th className="py-2 px-3 text-center w-16">Qty</th>
+                          <th className="py-2 px-3 text-right w-28">
+                            Harga Satuan
+                          </th>
+                          <th className="py-2 px-3 text-right w-32">
+                            Subtotal
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {completedSale.items.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 text-center text-slate-500 font-mono">
+                              {idx + 1}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <p className="font-bold text-slate-900">
+                                {item.product.name}
+                              </p>
+                              {(item.product.capacity ||
+                                item.product.color) && (
+                                <p className="text-[11px] text-slate-500">
+                                  {[item.product.capacity, item.product.color]
+                                    .filter(Boolean)
+                                    .join(" • ")}
+                                </p>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono font-bold text-[#055B5A]">
+                              {item.product.imei || item.product.sku || "-"}
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-bold text-slate-800">
+                              {item.qty}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                              {formatRupiah(item.product.sellingPrice)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                              {formatRupiah(
+                                item.product.sellingPrice * item.qty,
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Rincian Total & Garansi Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start pt-1">
+                    {/* Kotak Informasi Garansi */}
+                    <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2 text-xs">
+                      <p className="font-bold text-slate-900 flex items-center gap-1.5">
+                        <ShieldCheck className="h-4 w-4 text-[#055B5A]" />
+                        <span>Ketentuan Garansi Toko:</span>
+                      </p>
+                      <p className="text-slate-700">
+                        Masa Garansi Unit:{" "}
+                        <span className="font-bold text-slate-900">
+                          {completedSale.warrantyDays &&
+                          completedSale.warrantyDays > 0
+                            ? `${completedSale.warrantyDays} Hari`
+                            : "Tanpa Garansi"}
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-slate-500 whitespace-pre-line pt-1">
+                        {storeSettings?.receiptFooter ||
+                          "Nota asli dan segel toko wajib utuh & tidak rusak saat klaim garansi."}
+                      </p>
+                    </div>
+
+                    {/* Ringkasan Angka Pembayaran */}
+                    <div className="space-y-1.5 text-xs text-right p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Subtotal Barang:</span>
+                        <span className="font-mono">
+                          {formatRupiah(completedSale.subtotal)}
+                        </span>
+                      </div>
+                      {completedSale.discount > 0 && (
+                        <div className="flex justify-between text-rose-600 font-semibold">
+                          <span>Potongan Diskon:</span>
+                          <span className="font-mono">
+                            -{formatRupiah(completedSale.discount)}
+                          </span>
+                        </div>
+                      )}
+                      {completedSale.additionalFee &&
+                      completedSale.additionalFee > 0 ? (
+                        <div className="flex justify-between text-[#055B5A] font-semibold">
+                          <span>Biaya Tambahan:</span>
+                          <span className="font-mono">
+                            +{formatRupiah(completedSale.additionalFee)}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="flex justify-between items-center pt-2 border-t-2 border-slate-300 font-bold text-sm text-slate-900">
+                        <span>TOTAL AKHIR:</span>
+                        <span className="font-mono text-base text-[#055B5A]">
+                          {formatRupiah(completedSale.total)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tanda Tangan */}
+                  <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-200 text-center text-xs">
+                    <div>
+                      <p className="text-slate-500">Tanda Tangan Pelanggan,</p>
+                      <div className="h-16"></div>
+                      <p className="font-bold text-slate-800 border-t border-slate-300 pt-1 w-40 mx-auto">
+                        {completedSale.customerName || "Pelanggan Umum"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">Hormat Kami (Kasir),</p>
+                      <div className="h-16"></div>
+                      <p className="font-bold text-slate-800 border-t border-slate-300 pt-1 w-40 mx-auto">
+                        {completedSale.cashierName || "Kasir"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <DialogFooter className="flex gap-2">
+            {/* Banner Tips Cetak Printer Thermal */}
+            {printFormat === "thermal" && (
+              <div className="text-[11px] bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/60 rounded-xl p-3 flex items-start gap-2.5">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold">Tips Cetak Struk RPP02N (Thermal 58mm):</p>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-normal">
+                    Di dialog cetak browser (Ctrl + P), pastikan pilih <strong>Margin: None (Tidak Ada)</strong> dan <strong>hilangkan centang Headers & Footers</strong> agar struk tidak miring atau terpotong.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Tombol Aksi Modal */}
+            <DialogFooter className="gap-2 sm:gap-0 pt-3 border-t border-border flex flex-col sm:flex-row justify-between items-center">
               <Button
                 type="button"
                 variant="outline"
-                className="w-full"
                 onClick={() => setCompletedSale(null)}
+                className="w-full sm:w-auto text-xs"
               >
                 Tutup
               </Button>
-              <Button
-                type="button"
-                className="w-full gap-2 bg-primary text-primary-foreground font-bold"
-                onClick={() => {
-                  window.print();
-                }}
-              >
-                <Printer className="h-4 w-4" />
-                <span>Cetak Struk</span>
-              </Button>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 sm:flex-initial gap-1.5 border-slate-300 font-semibold text-xs"
+                  disabled={isDownloadingJpg}
+                  onClick={handleDownloadJpg}
+                >
+                  {isDownloadingJpg ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5 text-slate-700" />
+                  )}
+                  <span>
+                    {isDownloadingJpg ? "Menyimpan..." : "Download JPG"}
+                  </span>
+                </Button>
+                <Button
+                  type="button"
+                  onClick={executePrint}
+                  className="flex-1 sm:flex-initial gap-2 bg-[#055B5A] hover:bg-[#044847] text-white font-bold text-xs shadow-md shadow-primary/20"
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Cetak Invoice Sekarang</span>
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>

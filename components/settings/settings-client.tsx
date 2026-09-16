@@ -157,9 +157,12 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="Alamat lengkap lokasi toko fisik..."
-                  rows={2}
-                  className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                  rows={3}
+                  className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring font-sans"
                 />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Tekan Enter untuk membagi alamat toko menjadi baris baru pada struk kasir.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -206,8 +209,31 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
               </div>
 
               {/* Thermal Paper Simulation Container */}
-              <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4 font-mono text-[11px] text-slate-800 shadow-inner">
-                {/* Header */}
+              <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4 font-mono text-[11px] text-slate-800 shadow-inner relative overflow-hidden">
+                {/* WATERMARK DIAGONAL GLORIA PONSEL - MENYERONG NYERONG BANYAK */}
+                <div className="watermark-container pointer-events-none select-none absolute inset-0 z-0 flex flex-col justify-between overflow-hidden py-3">
+                  {[...Array(8)].map((_, i) => (
+                    <div
+                      key={i}
+                      className={`watermark-row flex justify-around items-center whitespace-nowrap w-[140%] ${
+                        i % 2 === 0 ? "-ml-8" : "-ml-2"
+                      }`}
+                    >
+                      <span className="watermark-text transform -rotate-25 font-black text-[11px] tracking-[0.2em] text-[#055B5A]/10 uppercase whitespace-nowrap">
+                        GLORIA PONSEL
+                      </span>
+                      <span className="watermark-text transform -rotate-25 font-black text-[11px] tracking-[0.2em] text-[#055B5A]/10 uppercase whitespace-nowrap">
+                        GLORIA PONSEL
+                      </span>
+                      <span className="watermark-text transform -rotate-25 font-black text-[11px] tracking-[0.2em] text-[#055B5A]/10 uppercase whitespace-nowrap">
+                        GLORIA PONSEL
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="relative z-10">
+                  {/* Header */}
                 <div className="text-center space-y-0.5 border-b border-dashed border-slate-300 pb-3">
                   {logoPreview && (
                     <div className="flex justify-center mb-1.5">
@@ -219,17 +245,34 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
                     </div>
                   )}
                   <p className="font-bold text-xs uppercase">{storeName || "NAMA TOKO"}</p>
-                  <p className="text-[10px] text-slate-600">{address || "Alamat Toko"}</p>
+                  <div className="text-[10px] text-slate-600 whitespace-pre-line leading-tight">
+                    {(address || "Alamat Toko")
+                      .replace(/\r\n/g, "\n")
+                      .split("\n")
+                      .map((line, idx) => (
+                        <span key={idx} className="block">
+                          {line || "\u00A0"}
+                        </span>
+                      ))}
+                  </div>
                   <p className="text-[10px] text-slate-600">Telp: {phone || "-"}</p>
                 </div>
 
                 {/* Simulated Meta */}
                 <div className="py-2 border-b border-dashed border-slate-300 space-y-0.5 text-[10px] text-slate-600">
-                  <div className="flex justify-between">
-                    <span>Faktur: INV-20260911-0001</span>
-                    <span>Kasir: Staff</span>
+                  <div className="flex justify-center">
+                    <span>11/09/2026 14:30 WIB</span>
                   </div>
-                  <p>11/09/2026 14:30 WIB</p>
+                  <div className="flex justify-center">
+                    <span>INV-20260911-0001</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Kasir: Staff</span>
+                    <span>Pelanggan: Benny</span>
+                  </div>
+                  <div className="flex justify-end">
+                    <span>08123123123</span>
+                  </div>
                 </div>
 
                 {/* Simulated Items */}
@@ -272,6 +315,7 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
                     {receiptFooter || "Terima kasih atas kunjungan Anda!"}
                   </p>
                 </div>
+              </div>
               </div>
             </CardContent>
           </Card>

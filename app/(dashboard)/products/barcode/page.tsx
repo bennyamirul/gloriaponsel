@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, isRoleAllowed } from "@/lib/auth";
 import { getAvailableStockForBarcodes } from "@/lib/actions/product.actions";
 import { BarcodePrintClient } from "@/components/products/barcode-print-client";
 
@@ -10,7 +10,7 @@ export const metadata = {
 
 export default async function BarcodePrintPage() {
   const user = await getCurrentUser();
-  if (!user || user.role !== "super_admin") {
+  if (!user || !isRoleAllowed(user.role, ["owner", "staff_gudang"])) {
     redirect("/dashboard?access_denied=true");
   }
 

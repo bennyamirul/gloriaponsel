@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -18,9 +19,12 @@ import {
   Tag,
   Truck,
   UserCheck,
-  PanelLeftClose,
-  PanelLeftOpen,
   Printer,
+  ChevronDown,
+  ChevronRight,
+  TrendingUp,
+  Wallet,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +32,8 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
-  superAdminOnly?: boolean;
+  roles?: string[];
+  children?: NavItem[];
 }
 
 interface NavSection {
@@ -40,24 +45,105 @@ const navSections: NavSection[] = [
   {
     title: "Operasional",
     items: [
-      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Transaksi", href: "/sales", icon: ShoppingCart },
-      { label: "Manajemen Unit", href: "/stock", icon: Boxes },
-      { label: "Laporan", href: "/reports", icon: BarChart3, superAdminOnly: true },
+      {
+        label: "Dashboard",
+        href: "/dashboard",
+        icon: LayoutDashboard,
+        roles: [
+          "owner",
+          "admin_kasir",
+          "staff_gudang",
+          "staff_keuangan",
+          "super_admin",
+          "admin",
+        ],
+      },
+      {
+        label: "Transaksi",
+        href: "/sales",
+        icon: ShoppingCart,
+        roles: ["owner", "admin_kasir", "staff_gudang", "super_admin", "admin"],
+        children: [
+          {
+            label: "Transaksi Penjualan",
+            href: "/sales",
+            icon: ShoppingCart,
+            roles: ["owner", "admin_kasir", "super_admin", "admin"],
+          },
+          {
+            label: "Riwayat Transaksi",
+            href: "/sales/history",
+            icon: Layers,
+            roles: [
+              "owner",
+              "admin_kasir",
+              "staff_gudang",
+              "super_admin",
+              "admin",
+            ],
+          },
+        ],
+      },
+      {
+        label: "Laporan",
+        href: "/reports/sales",
+        icon: BarChart3,
+        roles: ["owner", "super_admin", "staff_keuangan"],
+        children: [
+          {
+            label: "Laporan Penjualan",
+            href: "/reports/sales",
+            icon: TrendingUp,
+            roles: ["owner", "super_admin", "staff_keuangan"],
+          },
+          {
+            label: "Pengeluaran Harian",
+            href: "/reports/expenses",
+            icon: Wallet,
+            roles: ["owner", "super_admin", "staff_keuangan"],
+          },
+          {
+            label: "Laporan Keuangan",
+            href: "/reports/financial",
+            icon: Receipt,
+            roles: ["owner", "super_admin", "staff_keuangan"],
+          },
+        ],
+      },
     ],
   },
   {
     title: "Master Data",
     items: [
-      { label: "Data Produk", href: "/products", icon: Package, superAdminOnly: true },
-      { label: "Cetak Barcode SKU", href: "/products/barcode", icon: Printer, superAdminOnly: true },
+      {
+        label: "Data Produk",
+        href: "/products",
+        icon: Package,
+        roles: ["owner", "staff_gudang", "super_admin"],
+      },
+      {
+        label: "Cetak Barcode SKU",
+        href: "/products/barcode",
+        icon: Printer,
+        roles: ["owner", "staff_gudang", "super_admin"],
+      },
     ],
   },
   {
     title: "Administrasi",
     items: [
-      { label: "Manajemen User", href: "/users", icon: Users, superAdminOnly: true },
-      { label: "Pengaturan Toko", href: "/settings", icon: Settings, superAdminOnly: true },
+      {
+        label: "Manajemen User",
+        href: "/users",
+        icon: Users,
+        roles: ["owner", "super_admin"],
+      },
+      {
+        label: "Pengaturan Toko",
+        href: "/settings",
+        icon: Settings,
+        roles: ["owner", "super_admin"],
+      },
     ],
   },
 ];
@@ -70,7 +156,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  userRole = "super_admin",
+  userRole = "owner",
   userName = "Owner Toko",
   isExpanded = true,
   onToggle,
@@ -90,13 +176,60 @@ export function Sidebar({
       .toUpperCase();
   };
 
+  const getRoleLabel = (role: string) => {
+    if (role === "owner" || role === "super_admin") return "Owner";
+    if (role === "staff_gudang") return "Staff Admin";
+    if (role === "staff_keuangan") return "Staff Keuangan";
+    return "Staff Marketing";
+  };
+
+  // State untuk collapsible sub-menu (buka/tutup)
+  const [openSubmenus, setOpenSubmenus] = useState<Record<string, boolean>>(() => {
+    return {
+      Transaksi: true,
+      Laporan: true,
+    };
+  });
+
+  // Sinkronisasi otomatis agar sub-menu tetap terbuka jika halaman anak sedang aktif
+  useEffect(() => {
+    for (const section of navSections) {
+      for (const item of section.items) {
+        if (item.children) {
+          const isChildActive = item.children.some(
+            (child) => pathname === child.href || pathname.startsWith(child.href + "/")
+          );
+          if (isChildActive) {
+            setOpenSubmenus((prev) => ({
+              ...prev,
+              [item.label]: true,
+            }));
+          }
+        }
+      }
+    }
+  }, [pathname]);
+
+  const toggleSubmenu = (label: string) => {
+    setOpenSubmenus((prev) => ({
+      ...prev,
+      [label]: !prev[label],
+    }));
+  };
+
   // Filter sections and items based on role
   const visibleSections = navSections
     .map((section) => ({
       ...section,
-      items: section.items.filter(
-        (item) => !item.superAdminOnly || userRole === "super_admin"
-      ),
+      items: section.items.filter((item) => {
+        if (item.roles && !item.roles.includes(userRole)) return false;
+        if (item.children) {
+          return item.children.some(
+            (c) => !c.roles || c.roles.includes(userRole),
+          );
+        }
+        return true;
+      }),
     }))
     .filter((section) => section.items.length > 0);
 
@@ -110,7 +243,7 @@ export function Sidebar({
             href="/dashboard"
             className="flex items-center gap-3 group transition"
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white p-0.5 shadow-md shadow-emerald-950/40 overflow-hidden">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
               <Image
                 src="/logoGP.png"
                 alt="Gloria Ponsel"
@@ -129,17 +262,6 @@ export function Sidebar({
               </span>
             </div>
           </Link>
-
-          {onToggle && (
-            <button
-              onClick={onToggle}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-teal-200/70 hover:text-white hover:bg-[#073332] transition"
-              title="Kecilkan Sidebar"
-              aria-label="Kecilkan Sidebar"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
-          )}
         </div>
 
         {/* Scrollable Navigation Items */}
@@ -151,29 +273,98 @@ export function Sidebar({
               </p>
               {section.items.map((item) => {
                 const Icon = item.icon;
+                const hasChildren = item.children && item.children.length > 0;
+                const isSubmenuOpen = hasChildren ? !!openSubmenus[item.label] : false;
+                const isChildActive = hasChildren && item.children!.some(
+                  (child) => pathname === child.href || pathname.startsWith(child.href + "/")
+                );
                 const isActive =
                   pathname === item.href ||
-                  (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                  (item.href !== "/dashboard" &&
+                    pathname.startsWith(item.href));
+
+                if (hasChildren) {
+                  return (
+                    <div key={item.label}>
+                      <button
+                        type="button"
+                        onClick={() => toggleSubmenu(item.label)}
+                        className={cn(
+                          "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150 text-left",
+                          isChildActive || isActive
+                            ? "bg-[#055b5a]/40 text-white font-semibold shadow-xs"
+                            : "text-teal-100/70 hover:text-white hover:bg-[#073332]"
+                        )}
+                      >
+                        <div className="flex items-center gap-3 truncate">
+                          <Icon
+                            className={cn(
+                              "h-4 w-4 shrink-0",
+                              isChildActive || isActive ? "text-teal-300" : "text-teal-200/70"
+                            )}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+                        <ChevronDown
+                          className={cn(
+                            "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                            isSubmenuOpen ? "rotate-0 text-white" : "-rotate-90 text-teal-400/60"
+                          )}
+                        />
+                      </button>
+
+                      {isSubmenuOpen && (
+                        <div className="ml-5 pl-2.5 border-l border-teal-800/80 mt-1 space-y-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                          {item.children!
+                            .filter(
+                              (child) =>
+                                !child.roles || child.roles.includes(userRole),
+                            )
+                            .map((child) => {
+                              const ChildIcon = child.icon;
+                              const childActive = pathname === child.href;
+                              return (
+                                <Link
+                                  key={child.href}
+                                  href={child.href}
+                                  className={cn(
+                                    "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition",
+                                    childActive
+                                      ? "bg-[#055b5a] text-white font-bold shadow-xs"
+                                      : "text-teal-200/70 hover:bg-[#073332] hover:text-white",
+                                  )}
+                                >
+                                  <ChildIcon className="h-3.5 w-3.5" />
+                                  <span>{child.label}</span>
+                                </Link>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
 
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150",
-                      isActive
-                        ? "bg-[#055b5a] text-white font-semibold shadow-sm"
-                        : "text-teal-100/70 hover:text-white hover:bg-[#073332]"
-                    )}
-                  >
-                    <Icon
+                  <div key={item.href}>
+                    <Link
+                      href={item.href}
                       className={cn(
-                        "h-4 w-4 shrink-0 transition-colors",
-                        isActive ? "text-white" : "text-teal-200/70"
+                        "flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150",
+                        isActive
+                          ? "bg-[#055b5a] text-white font-semibold shadow-sm"
+                          : "text-teal-100/70 hover:text-white hover:bg-[#073332]",
                       )}
-                    />
-                    <span className="truncate">{item.label}</span>
-                  </Link>
+                    >
+                      <Icon
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          isActive ? "text-white" : "text-teal-200/70",
+                        )}
+                      />
+                      <span className="truncate flex-1">{item.label}</span>
+                    </Link>
+                  </div>
                 );
               })}
             </div>
@@ -195,8 +386,8 @@ export function Sidebar({
                 <span className="text-xs font-semibold text-teal-100 truncate leading-tight group-hover/profile:text-white">
                   {userName}
                 </span>
-                <span className="text-[10px] capitalize text-teal-300/80 truncate">
-                  {userRole.replace("_", " ")}
+                <span className="text-[10px] font-medium text-teal-300/80 truncate">
+                  {getRoleLabel(userRole)}
                 </span>
               </div>
             </Link>
@@ -222,7 +413,7 @@ export function Sidebar({
       <div className="flex flex-col items-center gap-2">
         <Link
           href="/dashboard"
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white p-0.5 shadow-md shadow-emerald-950/40 transition hover:scale-105 overflow-hidden"
+          className="flex h-10 w-10 items-center justify-center transition hover:scale-105"
           title="Gloria Ponsel"
         >
           <Image
@@ -234,17 +425,6 @@ export function Sidebar({
             priority
           />
         </Link>
-
-        {onToggle && (
-          <button
-            onClick={onToggle}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-teal-200/70 hover:text-white hover:bg-[#073332] transition"
-            title="Buka Sidebar"
-            aria-label="Buka Sidebar"
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </button>
-        )}
       </div>
 
       {/* Navigation Icons (Scrollable) */}
@@ -252,25 +432,32 @@ export function Sidebar({
         {visibleSections.flatMap((section) =>
           section.items.map((item) => {
             const Icon = item.icon;
+            const targetHref = item.children
+              ? item.children.find((c) => !c.roles || c.roles.includes(userRole))?.href || item.href
+              : item.href;
+            const isChildActive = item.children?.some(
+              (c) => pathname === c.href || pathname.startsWith(c.href + "/")
+            );
             const isActive =
               pathname === item.href ||
+              isChildActive ||
               (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={targetHref}
                 className={cn(
                   "group relative flex h-10 w-10 items-center justify-center rounded-xl text-teal-200/70 transition-all duration-150 hover:bg-[#073332] hover:text-white",
                   isActive &&
-                    "bg-[#055b5a] text-white ring-1 ring-[#055b5a] font-semibold shadow-xs"
+                    "bg-[#055b5a] text-white ring-1 ring-[#055b5a] font-semibold shadow-xs",
                 )}
                 title={item.label}
               >
                 <Icon
                   className={cn(
                     "h-4.5 w-4.5 transition-transform group-hover:scale-110",
-                    isActive ? "text-white" : "text-teal-200/70"
+                    isActive ? "text-white" : "text-teal-200/70",
                   )}
                 />
 
@@ -280,7 +467,7 @@ export function Sidebar({
                 </div>
               </Link>
             );
-          })
+          }),
         )}
       </nav>
 

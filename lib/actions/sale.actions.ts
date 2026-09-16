@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { writeFile, mkdir } from "fs/promises";
+import { join } from "path";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { CreateSaleSchema, CreateSaleFormValues } from "@/lib/validations/sale.schema";
+import {
+  CreateSaleSchema,
+  CreateSaleFormValues,
+} from "@/lib/validations/sale.schema";
+import { createNotification } from "@/lib/actions/notification.actions";
 
 export interface SalesQueryParams {
   query?: string;
@@ -35,7 +41,9 @@ async function generateInvoiceNumber(): Promise<string> {
   const candidate = `${datePrefix}-${nextNumber}`;
 
   // Pastikan tidak ada tabrakan invoice
-  const existing = await db.sale.findUnique({ where: { invoiceNo: candidate } });
+  const existing = await db.sale.findUnique({
+    where: { invoiceNo: candidate },
+  });
   if (existing) {
     return `${datePrefix}-${Math.floor(1000 + Math.random() * 9000)}`;
   }
@@ -51,10 +59,22 @@ export async function createSale(values: CreateSaleFormValues) {
 
   const validated = CreateSaleSchema.safeParse(values);
   if (!validated.success) {
-    return { error: validated.error.errors[0]?.message || "Data transaksi tidak valid" };
+    return {
+      error: validated.error.errors[0]?.message || "Data transaksi tidak valid",
+    };
   }
 
-  const { customerId, customerName, paymentMethod, discount, additionalFee = 0, warrantyDays = 0, items } = validated.data;
+  const {
+    customerId,
+    customerName,
+    customerPhone,
+    paymentMethod,
+    discount,
+    additionalFee = 0,
+    additionalFeeNote,
+    warrantyDays = 0,
+    items,
+  } = validated.data;
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -79,10 +99,17 @@ export async function createSale(values: CreateSaleFormValues) {
           throw new Error(`Produk "${product.name}" sedang nonaktif.`);
         }
 
+        // Validasi status: Hanya produk berstatus Ready / Available yang boleh ditransaksikan
+        if (product.status !== "available" && product.status !== "ready") {
+          throw new Error(
+            `Produk "${product.name}" belum disetujui atau tidak dalam status Ready (status saat ini: ${product.status}).`,
+          );
+        }
+
         // Aturan Bisnis #7: Stok tidak boleh minus
         if (product.stock < item.qty) {
           throw new Error(
-            `Stok untuk "${product.name}" tidak mencukupi! Tersedia: ${product.stock}, diminta: ${item.qty}.`
+            `Stok untuk "${product.name}" tidak mencukupi! Tersedia: ${product.stock}, diminta: ${item.qty}.`,
           );
         }
 
@@ -96,45 +123,38 @@ export async function createSale(values: CreateSaleFormValues) {
 
       // Validasi diskon tidak boleh melebihi subtotal
       if (discount > calculatedSubtotal) {
-        throw new Error("Jumlah diskon tidak boleh melebihi subtotal transaksi.");
+        throw new Error(
+          "Jumlah diskon tidak boleh melebihi subtotal transaksi.",
+        );
       }
 
-      // Tentukan customerId (jika diinput nama manual, cari atau buat otomatis)
-      let finalCustomerId = customerId || null;
-      if (!finalCustomerId && customerName && customerName.trim()) {
-        const trimmed = customerName.trim();
-        if (
-          trimmed.toLowerCase() !== "pelanggan umum" &&
-          trimmed.toLowerCase() !== "umum" &&
-          trimmed.toLowerCase() !== "walk-in"
-        ) {
-          let existingCust = await tx.customer.findFirst({
-            where: { name: { equals: trimmed, mode: "insensitive" } },
-          });
-          if (!existingCust) {
-            existingCust = await tx.customer.create({
-              data: { name: trimmed },
-            });
-          }
-          finalCustomerId = existingCust.id;
-        }
-      }
+      const finalCustomerName =
+        customerName && customerName.trim() ? customerName.trim() : "Pelanggan Umum";
+      const finalCustomerPhone =
+        customerPhone && customerPhone.trim() ? customerPhone.trim() : null;
 
       const total = Math.max(0, calculatedSubtotal - discount + additionalFee);
       const invoiceNo = await generateInvoiceNumber();
 
       const now = new Date();
       const warrantyExpiry =
-        warrantyDays > 0 ? new Date(now.getTime() + warrantyDays * 24 * 60 * 60 * 1000) : null;
+        warrantyDays > 0
+          ? new Date(now.getTime() + warrantyDays * 24 * 60 * 60 * 1000)
+          : null;
 
       // 2. Simpan record transaksi Sale
       const sale = await tx.sale.create({
         data: {
           invoiceNo,
-          customerId: finalCustomerId,
+          customerName: finalCustomerName,
+          customerPhone: finalCustomerPhone,
           subtotal: calculatedSubtotal,
           discount,
           additionalFee,
+          additionalFeeNote:
+            additionalFeeNote && additionalFeeNote.trim()
+              ? additionalFeeNote.trim()
+              : null,
           warrantyDays,
           warrantyExpiry,
           total,
@@ -192,10 +212,28 @@ export async function createSale(values: CreateSaleFormValues) {
     revalidatePath("/stock");
     revalidatePath("/dashboard");
 
+    const formattedTotal = new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      maximumFractionDigits: 0,
+    }).format(Number(result.total));
+
+    if (user.role !== "owner" && user.role !== "super_admin") {
+      await createNotification({
+        targetRole: "owner",
+        title: "Transaksi Keluar Baru",
+        message: `Transaksi ${result.invoiceNo} senilai ${formattedTotal} berhasil diselesaikan oleh ${user.name || "Kasir"}.`,
+        type: "transaction_out",
+        link: "/sales/history",
+        excludeUserId: user.id,
+      });
+    }
+
     return {
       success: true,
       saleId: result.id,
       invoiceNo: result.invoiceNo,
+      cashierName: user.name,
     };
   } catch (error: any) {
     console.error("createSale error:", error);
@@ -230,13 +268,17 @@ export async function cancelSale(saleId: string) {
       // Admin hanya bisa membatalkan transaksinya sendiri di hari yang sama
       if (user.role === "admin") {
         if (sale.cashierId !== user.id) {
-          throw new Error("Akses Ditolak: Anda hanya dapat membatalkan transaksi yang Anda input sendiri.");
+          throw new Error(
+            "Akses Ditolak: Anda hanya dapat membatalkan transaksi yang Anda input sendiri.",
+          );
         }
 
         const saleDate = new Date(sale.createdAt).toDateString();
         const today = new Date().toDateString();
         if (saleDate !== today) {
-          throw new Error("Akses Ditolak: Kasir hanya dapat membatalkan transaksi pada hari yang sama. Hubungi Super Admin.");
+          throw new Error(
+            "Akses Ditolak: Kasir hanya dapat membatalkan transaksi pada hari yang sama. Hubungi Super Admin.",
+          );
         }
       }
 
@@ -255,19 +297,27 @@ export async function cancelSale(saleId: string) {
 
       if (!actorExists) {
         const userByEmail = user.email
-          ? await tx.user.findUnique({ where: { email: user.email }, select: { id: true } })
+          ? await tx.user.findUnique({
+              where: { email: user.email },
+              select: { id: true },
+            })
           : null;
 
         if (userByEmail) {
           actorId = userByEmail.id;
         } else {
           const cashierUser = sale.cashierId
-            ? await tx.user.findUnique({ where: { id: sale.cashierId }, select: { id: true } })
+            ? await tx.user.findUnique({
+                where: { id: sale.cashierId },
+                select: { id: true },
+              })
             : null;
           if (cashierUser) {
             actorId = cashierUser.id;
           } else {
-            const firstAdmin = await tx.user.findFirst({ select: { id: true } });
+            const firstAdmin = await tx.user.findFirst({
+              select: { id: true },
+            });
             if (firstAdmin) {
               actorId = firstAdmin.id;
             }
@@ -276,7 +326,9 @@ export async function cancelSale(saleId: string) {
       }
 
       for (const item of sale.items) {
-        const prod = await tx.product.findUnique({ where: { id: item.productId } });
+        const prod = await tx.product.findUnique({
+          where: { id: item.productId },
+        });
         await tx.product.update({
           where: { id: item.productId },
           data: {
@@ -312,20 +364,201 @@ export async function cancelSale(saleId: string) {
 }
 
 /**
+ * Menghapus transaksi penjualan dan mengembalikan stok barang yang belum direfund
+ */
+export async function deleteSale(saleId: string) {
+  await requireAuth();
+
+  try {
+    const result = await db.$transaction(
+      async (tx) => {
+        const sale = await tx.sale.findUnique({
+          where: { id: saleId },
+          include: {
+            items: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        });
+
+        if (!sale) {
+          throw new Error("Transaksi tidak ditemukan.");
+        }
+
+        // 1. Kembalikan stok untuk item yang belum direfund/retur
+        const stockRestores = new Map<
+          string,
+          { quantity: number; isPhone: boolean }
+        >();
+        for (const item of sale.items) {
+          if (!item.isReturned && item.product) {
+            const restore = stockRestores.get(item.productId) || {
+              quantity: 0,
+              isPhone: item.product.productType === "phone",
+            };
+            restore.quantity += item.qty;
+            stockRestores.set(item.productId, restore);
+          }
+        }
+
+        for (const [productId, restore] of stockRestores) {
+          await tx.product.update({
+            where: { id: productId },
+            data: {
+              stock: { increment: restore.quantity },
+              ...(restore.isPhone ? { status: "available" } : {}),
+            },
+          });
+        }
+
+        // 2. Hapus mutasi stok terkait transaksi penjualan ini
+        await tx.stockMovement.deleteMany({
+          where: {
+            referenceType: "sale",
+            referenceId: sale.id,
+          },
+        });
+
+        // 3. Hapus seluruh item penjualan
+        await tx.saleItem.deleteMany({
+          where: { saleId: sale.id },
+        });
+
+        // 4. Hapus record penjualan
+        await tx.sale.delete({
+          where: { id: sale.id },
+        });
+
+        return {
+          success: true as const,
+          invoiceNo: sale.invoiceNo,
+          message: `Transaksi ${sale.invoiceNo} berhasil dihapus.`,
+        };
+      },
+      { maxWait: 10000, timeout: 30000 },
+    );
+
+    revalidatePath("/sales");
+    revalidatePath("/products");
+    revalidatePath("/stock");
+    revalidatePath("/dashboard");
+    revalidatePath("/reports");
+
+    return result;
+  } catch (error: any) {
+    console.error("deleteSale error:", error);
+    return {
+      success: false as const,
+      error: error.message || "Gagal menghapus transaksi.",
+    };
+  }
+}
+
+/**
+ * Menghapus seluruh riwayat transaksi penjualan
+ */
+export async function deleteAllSales() {
+  await requireAuth();
+
+  try {
+    const result = await db.$transaction(
+      async (tx) => {
+        // 1. Kembalikan stok untuk semua item penjualan yang belum direfund
+        const unreturnedItems = await tx.saleItem.findMany({
+          where: { isReturned: false },
+          include: { product: true },
+        });
+
+        const stockRestores = new Map<
+          string,
+          { quantity: number; isPhone: boolean }
+        >();
+        for (const item of unreturnedItems) {
+          if (item.product) {
+            const restore = stockRestores.get(item.productId) || {
+              quantity: 0,
+              isPhone: item.product.productType === "phone",
+            };
+            restore.quantity += item.qty;
+            stockRestores.set(item.productId, restore);
+          }
+        }
+
+        for (const [productId, restore] of stockRestores) {
+          await tx.product.update({
+            where: { id: productId },
+            data: {
+              stock: { increment: restore.quantity },
+              ...(restore.isPhone ? { status: "available" } : {}),
+            },
+          });
+        }
+
+        // 2. Hapus seluruh mutasi stok bertipe referensi sale
+        await tx.stockMovement.deleteMany({
+          where: { referenceType: "sale" },
+        });
+
+        // 3. Hapus seluruh item penjualan
+        await tx.saleItem.deleteMany({});
+
+        // 4. Hapus seluruh transaksi penjualan
+        const deletedSales = await tx.sale.deleteMany({});
+
+        return {
+          success: true as const,
+          count: deletedSales.count,
+          message: `Semua riwayat transaksi (${deletedSales.count} transaksi) berhasil dihapus.`,
+        };
+      },
+      { maxWait: 10000, timeout: 30000 },
+    );
+
+    revalidatePath("/sales");
+    revalidatePath("/products");
+    revalidatePath("/stock");
+    revalidatePath("/dashboard");
+    revalidatePath("/reports");
+
+    return result;
+  } catch (error: any) {
+    console.error("deleteAllSales error:", error);
+    return {
+      success: false as const,
+      error: error.message || "Gagal menghapus semua transaksi.",
+    };
+  }
+}
+
+/**
  * Mengambil riwayat transaksi penjualan
  */
 export async function getSales(params?: SalesQueryParams) {
   const user = await requireAuth();
 
-  const { query, status, startDate, endDate, page = 1, limit = 20 } = params || {};
+  const {
+    query,
+    status,
+    startDate,
+    endDate,
+    page = 1,
+    limit = 20,
+  } = params || {};
   const skip = (page - 1) * limit;
 
   const where: any = {};
 
+  // Jika admin_kasir, hanya tampilkan transaksi yang dilakukan oleh kasir yang bersangkutan
+  if (user.role === "admin_kasir") {
+    where.cashierId = user.id;
+  }
+
   if (query && query.trim() !== "") {
     where.OR = [
-      { invoiceNo: { contains: query.trim(), mode: "insensitive" } },
-      { customer: { name: { contains: query.trim(), mode: "insensitive" } } },
+      { invoiceNo: { contains: query.trim() } },
+      { customerName: { contains: query.trim() } },
     ];
   }
 
@@ -353,7 +586,6 @@ export async function getSales(params?: SalesQueryParams) {
       take: limit,
       orderBy: { createdAt: "desc" },
       include: {
-        customer: { select: { id: true, name: true, phone: true } },
         cashier: { select: { id: true, name: true } },
         items: {
           include: {
@@ -378,22 +610,27 @@ export async function getSales(params?: SalesQueryParams) {
     sales: sales.map((s) => ({
       id: s.id,
       invoiceNo: s.invoiceNo,
-      customerName: s.customer?.name || "Pelanggan Umum",
-      customerPhone: s.customer?.phone || null,
+      customerName: s.customerName || "Pelanggan Umum",
+      customerPhone: s.customerPhone || null,
       cashierName: s.cashier.name,
       cashierId: s.cashierId,
       subtotal: Number(s.subtotal),
       discount: Number(s.discount),
       additionalFee: Number(s.additionalFee || 0),
+      additionalFeeNote: s.additionalFeeNote || null,
       warrantyDays: s.warrantyDays,
       warrantyExpiry: s.warrantyExpiry ? s.warrantyExpiry.toISOString() : null,
       total: Number(s.total),
+      commission: Number((s as any).commission || 0),
+      commissionProofUrl: (s as any).commissionProofUrl || null,
+      paymentProofUrl: (s as any).paymentProofUrl || null,
       paymentMethod: s.paymentMethod,
       status: s.status,
       createdAt: s.createdAt.toISOString(),
       itemCount: s.items.reduce((acc, it) => acc + it.qty, 0),
       items: s.items.map((it) => ({
         id: it.id,
+        productId: it.productId,
         productName: it.product.name,
         productSku: it.product.sku,
         productImei: it.product.imei,
@@ -403,6 +640,9 @@ export async function getSales(params?: SalesQueryParams) {
         qty: it.qty,
         unitPrice: Number(it.unitPrice),
         subtotal: Number(it.subtotal),
+        isReturned: it.isReturned,
+        returnReason: it.returnReason,
+        returnedAt: it.returnedAt ? it.returnedAt.toISOString() : null,
       })),
     })),
     total,
@@ -422,11 +662,12 @@ export async function getSaleDetail(saleId: string) {
   const sale = await db.sale.findUnique({
     where: { id: saleId },
     include: {
-      customer: true,
       cashier: { select: { id: true, name: true, email: true } },
       items: {
         include: {
-          product: { select: { id: true, name: true, sku: true, variant: true } },
+          product: {
+            select: { id: true, name: true, sku: true, variant: true },
+          },
         },
       },
     },
@@ -440,17 +681,21 @@ export async function getSaleDetail(saleId: string) {
     sale: {
       id: sale.id,
       invoiceNo: sale.invoiceNo,
-      customerName: sale.customer?.name || "Pelanggan Umum",
-      customerPhone: sale.customer?.phone || "-",
-      customerAddress: sale.customer?.address || "-",
+      customerName: sale.customerName || "Pelanggan Umum",
+      customerPhone: sale.customerPhone || "-",
+      customerAddress: "-",
       cashierName: sale.cashier.name,
       cashierId: sale.cashierId,
       subtotal: Number(sale.subtotal),
       discount: Number(sale.discount),
       additionalFee: Number(sale.additionalFee || 0),
+      additionalFeeNote: sale.additionalFeeNote || null,
       warrantyDays: sale.warrantyDays,
-      warrantyExpiry: sale.warrantyExpiry ? sale.warrantyExpiry.toISOString() : null,
+      warrantyExpiry: sale.warrantyExpiry
+        ? sale.warrantyExpiry.toISOString()
+        : null,
       total: Number(sale.total),
+      paymentProofUrl: (sale as any).paymentProofUrl || null,
       paymentMethod: sale.paymentMethod,
       status: sale.status,
       createdAt: sale.createdAt.toISOString(),
@@ -552,11 +797,7 @@ export async function returnWarrantyItem(input: {
       where: { id: input.saleItemId },
       include: {
         product: true,
-        sale: {
-          include: {
-            customer: true,
-          },
-        },
+        sale: true,
       },
     });
 
@@ -571,14 +812,14 @@ export async function returnWarrantyItem(input: {
     const reason = input.returnReason?.trim() || "Klaim Garansi Toko";
     const now = new Date();
 
-    // 1. Update Product: kembalikan ke stok dengan status 'retur'
-    await tx.product.update({
-      where: { id: saleItem.productId },
-      data: {
-        stock: { increment: saleItem.qty },
-        status: "retur",
-      },
-    });
+      // 1. Update Product: kembalikan ke stok dengan status 'available' (Ready)
+      await tx.product.update({
+        where: { id: saleItem.productId },
+        data: {
+          stock: { increment: saleItem.qty },
+          status: "available",
+        },
+      });
 
     // 2. Tandai item penjualan sebagai diretur
     await tx.saleItem.update({
@@ -588,6 +829,22 @@ export async function returnWarrantyItem(input: {
         returnReason: reason,
         returnedAt: now,
       },
+    });
+
+    const refundedSubtotal = Number(saleItem.subtotal);
+    const newSubtotal = Math.max(
+      0,
+      Number(saleItem.sale.subtotal) - refundedSubtotal,
+    );
+    const newTotal = Math.max(
+      0,
+      newSubtotal -
+        Number(saleItem.sale.discount || 0) +
+        Number(saleItem.sale.additionalFee || 0),
+    );
+    await tx.sale.update({
+      where: { id: saleItem.saleId },
+      data: { subtotal: newSubtotal, total: newTotal },
     });
 
     // 3. Catat mutasi stok masuk (retur)
@@ -600,14 +857,20 @@ export async function returnWarrantyItem(input: {
 
     if (!actorExists) {
       const userByEmail = session.email
-        ? await tx.user.findUnique({ where: { email: session.email }, select: { id: true } })
+        ? await tx.user.findUnique({
+            where: { email: session.email },
+            select: { id: true },
+          })
         : null;
 
       if (userByEmail) {
         actorId = userByEmail.id;
       } else {
         const cashierUser = saleItem.sale.cashierId
-          ? await tx.user.findUnique({ where: { id: saleItem.sale.cashierId }, select: { id: true } })
+          ? await tx.user.findUnique({
+              where: { id: saleItem.sale.cashierId },
+              select: { id: true },
+            })
           : null;
         if (cashierUser) {
           actorId = cashierUser.id;
@@ -635,12 +898,360 @@ export async function returnWarrantyItem(input: {
     revalidatePath("/stock");
     revalidatePath("/sales");
     revalidatePath("/products");
+    revalidatePath("/dashboard");
+    revalidatePath("/reports");
 
     return {
       success: true,
       message: `Unit "${saleItem.product.name}" berhasil dikembalikan ke stok dengan status Retur.`,
     };
   });
+}
+
+export interface UpdateSaleItemInput {
+  saleItemId: string;
+  action: "return" | "exchange";
+  returnReason?: string;
+  replacementProductId?: string;
+}
+
+/**
+ * Mengubah status item pada riwayat transaksi: Retur atau Tukar Unit
+ */
+export async function updateSaleItemTransaction(input: UpdateSaleItemInput) {
+  const session = await requireAuth();
+
+  return await db.$transaction(async (tx) => {
+    const saleItem = await tx.saleItem.findUnique({
+      where: { id: input.saleItemId },
+      include: {
+        product: true,
+        sale: {
+          include: {
+            cashier: true,
+          },
+        },
+      },
+    });
+
+    if (!saleItem) {
+      throw new Error("Item transaksi tidak ditemukan.");
+    }
+
+    if (saleItem.isReturned) {
+      throw new Error(
+        "Item transaksi ini sudah pernah diretur sebelumnya dan tidak dapat diubah.",
+      );
+    }
+
+    // Resolusi actorId agar tidak melanggar foreign key stock_movements
+    let actorId = session.id;
+    const actorExists = await tx.user.findUnique({
+      where: { id: actorId },
+      select: { id: true },
+    });
+
+    if (!actorExists) {
+      const userByEmail = session.email
+        ? await tx.user.findUnique({
+            where: { email: session.email },
+            select: { id: true },
+          })
+        : null;
+
+      if (userByEmail) {
+        actorId = userByEmail.id;
+      } else {
+        const cashierUser = saleItem.sale.cashierId
+          ? await tx.user.findUnique({
+              where: { id: saleItem.sale.cashierId },
+              select: { id: true },
+            })
+          : null;
+        if (cashierUser) {
+          actorId = cashierUser.id;
+        } else {
+          const firstAdmin = await tx.user.findFirst({ select: { id: true } });
+          if (firstAdmin) {
+            actorId = firstAdmin.id;
+          }
+        }
+      }
+    }
+
+    const now = new Date();
+
+    if (input.action === "return") {
+      const reason = input.returnReason?.trim() || "Refund Transaksi";
+
+      // 1. Update Product: kembalikan ke stok dengan status 'available' (Ready)
+      await tx.product.update({
+        where: { id: saleItem.productId },
+        data: {
+          stock: { increment: saleItem.qty },
+          status: "available",
+        },
+      });
+
+      // 2. Tandai item penjualan sebagai direfund (isReturned = true)
+      await tx.saleItem.update({
+        where: { id: input.saleItemId },
+        data: {
+          isReturned: true,
+          returnReason: reason,
+          returnedAt: now,
+        },
+      });
+
+      // 3. Kurangi subtotal dan total pada faktur transaksi penjualan
+      const itemSubtotal = Number(saleItem.subtotal);
+      const currentSaleSubtotal = Number(saleItem.sale.subtotal);
+      const currentDiscount = Number(saleItem.sale.discount || 0);
+      const currentAdditionalFee = Number(saleItem.sale.additionalFee || 0);
+
+      const newSubtotal = Math.max(0, currentSaleSubtotal - itemSubtotal);
+      const newTotal = Math.max(
+        0,
+        newSubtotal - currentDiscount + currentAdditionalFee,
+      );
+
+      await tx.sale.update({
+        where: { id: saleItem.saleId },
+        data: {
+          subtotal: newSubtotal,
+          total: newTotal,
+        },
+      });
+
+      // 4. Catat mutasi stok masuk
+      await tx.stockMovement.create({
+        data: {
+          productId: saleItem.productId,
+          type: "in",
+          quantity: saleItem.qty,
+          referenceType: "sale",
+          referenceId: saleItem.saleId,
+          note: `Refund Transaksi [${saleItem.sale.invoiceNo}] - ${reason}`,
+          createdById: actorId,
+        },
+      });
+
+      revalidatePath("/stock");
+      revalidatePath("/sales");
+      revalidatePath("/products");
+      revalidatePath("/reports");
+      revalidatePath("/dashboard");
+
+      return {
+        success: true,
+        message: `Unit "${saleItem.product.name}" berhasil direfund dan kembali ready. Total transaksi berkurang sebesar Rp ${itemSubtotal.toLocaleString("id-ID")}.`,
+      };
+    } else if (input.action === "exchange") {
+      if (!input.replacementProductId) {
+        throw new Error("Silakan pilih unit pengganti yang akan ditukar.");
+      }
+
+      if (input.replacementProductId === saleItem.productId) {
+        throw new Error(
+          "Unit pengganti tidak boleh sama dengan unit yang sedang ditukar.",
+        );
+      }
+
+      const replacementProduct = await tx.product.findUnique({
+        where: { id: input.replacementProductId },
+      });
+
+      if (!replacementProduct) {
+        throw new Error("Unit pengganti tidak ditemukan di database.");
+      }
+
+      if (!replacementProduct.isActive) {
+        throw new Error(
+          `Unit pengganti "${replacementProduct.name}" sedang nonaktif.`,
+        );
+      }
+
+      if (replacementProduct.stock < saleItem.qty) {
+        throw new Error(
+          `Stok unit pengganti "${replacementProduct.name}" tidak mencukupi (tersedia: ${replacementProduct.stock}).`,
+        );
+      }
+
+      const reason = input.returnReason?.trim() || "Tukar Unit Pelanggan";
+
+      const oldUnitPrice = Number(saleItem.unitPrice);
+      const newUnitPrice = Number(replacementProduct.sellingPrice);
+      const oldItemSubtotal = Number(saleItem.subtotal);
+      const newItemSubtotal = newUnitPrice * saleItem.qty;
+      const priceDiff = newItemSubtotal - oldItemSubtotal;
+
+      const currentSaleSubtotal = Number(saleItem.sale.subtotal);
+      const currentDiscount = Number(saleItem.sale.discount || 0);
+      const currentAdditionalFee = Number(saleItem.sale.additionalFee || 0);
+
+      const newSaleSubtotal = Math.max(0, currentSaleSubtotal - oldItemSubtotal + newItemSubtotal);
+      const newSaleTotal = Math.max(0, newSaleSubtotal - currentDiscount + currentAdditionalFee);
+
+      const exchangeData = {
+        type: "exchange",
+        invoiceNo: saleItem.sale.invoiceNo,
+        customerName: saleItem.sale.customerName || "Pelanggan Umum",
+        exchangedAt: now.toISOString(),
+        reason: reason,
+        oldProduct: {
+          id: saleItem.productId,
+          name: saleItem.product.name,
+          imei: saleItem.product.imei || saleItem.product.sku,
+          price: oldUnitPrice,
+        },
+        replacementProduct: {
+          id: replacementProduct.id,
+          name: replacementProduct.name,
+          imei: replacementProduct.imei || replacementProduct.sku,
+          price: newUnitPrice,
+        },
+        priceDiff: priceDiff,
+        oldSaleTotal: Number(saleItem.sale.total),
+        newSaleTotal: newSaleTotal,
+      };
+
+      // 1. Kembalikan unit lama ke gudang dengan status 'available' (Ready)
+      await tx.product.update({
+        where: { id: saleItem.productId },
+        data: {
+          stock: { increment: saleItem.qty },
+          status: "available",
+          description: `[Tukar Unit INV-${saleItem.sale.invoiceNo}] Ditukar dengan: ${replacementProduct.name} (${replacementProduct.imei || replacementProduct.sku}) | Selisih: Rp ${priceDiff.toLocaleString("id-ID")} | Alasan: ${reason} | Tanggal: ${now.toLocaleDateString("id-ID")} ||EXCHANGE_JSON:${JSON.stringify(exchangeData)}||`,
+        },
+      });
+
+      // Catat mutasi stok masuk untuk unit lama
+      await tx.stockMovement.create({
+        data: {
+          productId: saleItem.productId,
+          type: "in",
+          quantity: saleItem.qty,
+          referenceType: "sale",
+          referenceId: saleItem.saleId,
+          note: `Tukar Unit Masuk [${saleItem.sale.invoiceNo}] - Ditukar dengan ${replacementProduct.name} (${replacementProduct.imei || replacementProduct.sku}) - Alasan: ${reason}`,
+          createdById: actorId,
+        },
+      });
+
+      // 2. Kurangi stok unit pengganti dan tandai status 'sold' jika ponsel
+      await tx.product.update({
+        where: { id: replacementProduct.id },
+        data: {
+          stock: { decrement: saleItem.qty },
+          ...(replacementProduct.productType === "phone"
+            ? { status: "sold" }
+            : {}),
+        },
+      });
+
+      // Catat mutasi stok keluar untuk unit baru
+      await tx.stockMovement.create({
+        data: {
+          productId: replacementProduct.id,
+          type: "out",
+          quantity: -saleItem.qty,
+          referenceType: "sale",
+          referenceId: saleItem.saleId,
+          note: `Tukar Unit Keluar [${saleItem.sale.invoiceNo}] - Menggantikan ${saleItem.product.name} (${saleItem.product.imei || saleItem.product.sku})`,
+          createdById: actorId,
+        },
+      });
+
+      // 3. Update item transaksi dengan unit pengganti dan harga baru
+      await tx.saleItem.update({
+        where: { id: input.saleItemId },
+        data: {
+          productId: replacementProduct.id,
+          unitPrice: newUnitPrice,
+          unitCost: replacementProduct.purchasePrice,
+          subtotal: newItemSubtotal,
+          returnReason: `[TUKAR_UNIT] Ditukar dari: ${saleItem.product.name} (${saleItem.product.imei || saleItem.product.sku}) [Rp ${oldUnitPrice.toLocaleString("id-ID")}] -> Ditukar ke: ${replacementProduct.name} (${replacementProduct.imei || replacementProduct.sku}) [Rp ${newUnitPrice.toLocaleString("id-ID")}] | Selisih: Rp ${priceDiff.toLocaleString("id-ID")} | Alasan: ${reason} | Tanggal: ${now.toLocaleDateString("id-ID")} ||EXCHANGE_JSON:${JSON.stringify(exchangeData)}||`,
+          isReturned: false,
+        },
+      });
+
+      // 4. Update total dan subtotal pada faktur transaksi penjualan
+      await tx.sale.update({
+        where: { id: saleItem.saleId },
+        data: {
+          subtotal: newSaleSubtotal,
+          total: newSaleTotal,
+        },
+      });
+
+      revalidatePath("/stock");
+      revalidatePath("/sales");
+      revalidatePath("/sales/history");
+      revalidatePath("/products");
+      revalidatePath("/reports");
+      revalidatePath("/dashboard");
+
+      const diffText =
+        priceDiff > 0
+          ? `(Pelanggan tambah bayar: Rp ${priceDiff.toLocaleString("id-ID")})`
+          : priceDiff < 0
+          ? `(Pengembalian dana ke pelanggan: Rp ${Math.abs(priceDiff).toLocaleString("id-ID")})`
+          : `(Tidak ada selisih harga)`;
+
+      return {
+        success: true,
+        message: `Unit "${saleItem.product.name}" berhasil ditukar dengan "${replacementProduct.name}". Total transaksi berubah menjadi Rp ${newSaleTotal.toLocaleString("id-ID")} ${diffText}.`,
+        updatedTotal: newSaleTotal,
+        updatedSubtotal: newSaleSubtotal,
+        exchangeData,
+      };
+    } else {
+      throw new Error("Aksi transaksi tidak dikenali.");
+    }
+  });
+}
+
+/**
+ * Mengambil daftar produk ready stock yang tersedia untuk tukar unit
+ */
+export async function getAvailableExchangeProducts() {
+  await requireAuth();
+
+  const products = await db.product.findMany({
+    where: {
+      isActive: true,
+      stock: { gt: 0 },
+      status: "available",
+    },
+    orderBy: [{ productType: "asc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      imei: true,
+      productType: true,
+      capacity: true,
+      color: true,
+      variant: true,
+      sellingPrice: true,
+      purchasePrice: true,
+      stock: true,
+    },
+  });
+
+  return products.map((p) => ({
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+    imei: p.imei,
+    productType: p.productType,
+    capacity: p.capacity,
+    color: p.color,
+    variant: p.variant,
+    sellingPrice: Number(p.sellingPrice),
+    purchasePrice: Number(p.purchasePrice),
+    stock: p.stock,
+  }));
 }
 
 /**
@@ -663,10 +1274,6 @@ export async function getSalesLifecycleData() {
         isActive: true,
       },
       orderBy: { createdAt: "desc" },
-      include: {
-        brand: { select: { name: true } },
-        category: { select: { name: true } },
-      },
     }),
 
     // 2. Garansi: completed sales where warrantyDays > 0, warrantyExpiry > now, dan isReturned = false
@@ -684,7 +1291,6 @@ export async function getSalesLifecycleData() {
         product: true,
         sale: {
           include: {
-            customer: true,
             cashier: { select: { id: true, name: true } },
           },
         },
@@ -710,7 +1316,6 @@ export async function getSalesLifecycleData() {
         product: true,
         sale: {
           include: {
-            customer: true,
             cashier: { select: { id: true, name: true } },
           },
         },
@@ -721,8 +1326,8 @@ export async function getSalesLifecycleData() {
   const readyItems: ReadyItemData[] = readyProducts.map((p) => ({
     id: p.id,
     name: p.name,
-    brandName: p.brand?.name || p.brandName || "-",
-    categoryName: p.category?.name || p.categoryName || "-",
+    brandName: p.brandName || "-",
+    categoryName: p.categoryName || "-",
     sku: p.sku,
     imei: p.imei,
     productType: p.productType,
@@ -756,9 +1361,10 @@ export async function getSalesLifecycleData() {
       qty: it.qty,
       unitPrice: Number(it.unitPrice),
       subtotal: Number(it.subtotal),
-      customerName: it.sale.customer?.name || "Pelanggan Umum",
-      customerPhone: it.sale.customer?.phone || null,
-      cashierName: it.sale.cashier.name,
+      customerName: it.sale.customerName || "Pelanggan Umum",
+      customerPhone: it.sale.customerPhone || null,
+      cashierName:
+        it.sale.cashier.name || (it.sale.cashier as any).username || "Kasir",
       warrantyDays: days,
       warrantyExpiry: expiry ? expiry.toISOString() : new Date().toISOString(),
     };
@@ -782,9 +1388,10 @@ export async function getSalesLifecycleData() {
       qty: it.qty,
       unitPrice: Number(it.unitPrice),
       subtotal: Number(it.subtotal),
-      customerName: it.sale.customer?.name || "Pelanggan Umum",
-      customerPhone: it.sale.customer?.phone || null,
-      cashierName: it.sale.cashier.name,
+      customerName: it.sale.customerName || "Pelanggan Umum",
+      customerPhone: it.sale.customerPhone || null,
+      cashierName:
+        it.sale.cashier.name || (it.sale.cashier as any).username || "Kasir",
       warrantyDays: days,
       warrantyExpiry: expiry ? expiry.toISOString() : null,
       paymentMethod: it.sale.paymentMethod,
@@ -806,3 +1413,72 @@ export async function getSalesLifecycleData() {
     },
   };
 }
+
+/**
+ * Upload dan perbarui bukti pembayaran transaksi penjualan
+ */
+export async function uploadSalePaymentProof(saleId: string, formData: FormData) {
+  const user = await requireAuth();
+
+  const file = formData.get("file") as File | null;
+  if (!file) {
+    return { error: "File bukti pembayaran tidak ditemukan." };
+  }
+  if (!file.type.startsWith("image/")) {
+    return { error: "Hanya file gambar yang diperbolehkan." };
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return { error: "Ukuran gambar maksimal 10MB." };
+  }
+
+  try {
+    const sale = await db.sale.findUnique({
+      where: { id: saleId },
+      select: { id: true, cashierId: true, invoiceNo: true },
+    });
+
+    if (!sale) {
+      return { error: "Transaksi tidak ditemukan." };
+    }
+
+    // Role check: Admin Kasir (Staff Marketing) hanya bisa upload bukti transaksinya sendiri.
+    // Staff Gudang (Staff Admin) read-only.
+    // Owner / Super Admin bisa upload/update semua.
+    if (user.role === "staff_gudang") {
+      return { error: "Staff Admin hanya memiliki akses melihat bukti pembayaran." };
+    }
+    if (user.role === "admin_kasir" && sale.cashierId !== user.id) {
+      return {
+        error: "Anda hanya dapat mengunggah bukti pembayaran untuk transaksi Anda sendiri.",
+      };
+    }
+
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    const uploadsDir = join(process.cwd(), "public", "uploads", "payments");
+    await mkdir(uploadsDir, { recursive: true });
+
+    const ext = file.name.split(".").pop() || "jpg";
+    const filename = `pay-${sale.invoiceNo}-${Date.now()}.${ext}`;
+    const filePath = join(uploadsDir, filename);
+
+    await writeFile(filePath, buffer);
+    const paymentProofUrl = `/uploads/payments/${filename}`;
+
+    await db.sale.update({
+      where: { id: saleId },
+      data: { paymentProofUrl },
+    });
+
+    revalidatePath("/sales");
+    revalidatePath("/sales/history");
+    revalidatePath("/dashboard");
+
+    return { success: true, paymentProofUrl };
+  } catch (error: any) {
+    console.error("uploadSalePaymentProof error:", error);
+    return { error: error.message || "Gagal mengunggah bukti pembayaran." };
+  }
+}
+

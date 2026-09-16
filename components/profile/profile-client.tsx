@@ -7,7 +7,6 @@ import {
   User,
   Shield,
   KeyRound,
-  Mail,
   Calendar,
   Clock,
   Receipt,
@@ -34,7 +33,7 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
 
   // Form State: Profil
   const [name, setName] = useState(initialData.name);
-  const [email, setEmail] = useState(initialData.email);
+  const [username, setUsername] = useState(initialData.username || "");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Form State: Ganti Kata Sandi
@@ -49,18 +48,22 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
   // 1. Handle Update Profile
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Nama lengkap tidak boleh kosong.");
+    if (!username.trim()) {
+      toast.error("Username tidak boleh kosong.");
       return;
     }
-    if (!email.trim()) {
-      toast.error("Alamat email tidak boleh kosong.");
+    if (username.trim().length < 3) {
+      toast.error("Username minimal 3 karakter.");
+      return;
+    }
+    if (!name.trim()) {
+      toast.error("Nama lengkap tidak boleh kosong.");
       return;
     }
 
     setIsSavingProfile(true);
     try {
-      const res = await updateProfile({ name, email });
+      const res = await updateProfile({ name, username });
       if (res.error) {
         toast.error(res.error);
       } else {
@@ -68,8 +71,8 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
         if (res.user) {
           setProfile((prev) => ({
             ...prev,
-            name: res.user.name,
-            email: res.user.email,
+            name: res.user.name || prev.name,
+            username: (res.user as any).username || prev.username,
           }));
         }
         router.refresh();
@@ -120,7 +123,46 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
     }
   };
 
-  const isSuperAdmin = profile.role === "super_admin";
+  const getRoleBadge = (role: string) => {
+    if (role === "owner" || role === "super_admin") {
+      return (
+        <Badge
+          variant="outline"
+          className="border-indigo-300 bg-indigo-50 text-indigo-800 text-xs font-bold"
+        >
+          Owner
+        </Badge>
+      );
+    }
+    if (role === "staff_gudang") {
+      return (
+        <Badge
+          variant="outline"
+          className="border-amber-300 bg-amber-50 text-amber-800 text-xs font-bold"
+        >
+          Staff Admin
+        </Badge>
+      );
+    }
+    if (role === "staff_keuangan") {
+      return (
+        <Badge
+          variant="outline"
+          className="border-blue-300 bg-blue-50 text-blue-800 text-xs font-bold"
+        >
+          Staff Keuangan
+        </Badge>
+      );
+    }
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-medium"
+      >
+        Staff Marketing
+      </Badge>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -129,7 +171,7 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#055b5a] text-white font-bold text-xl shadow-md">
-              {profile.name
+              {(profile.name || "U")
                 .split(" ")
                 .map((n) => n[0])
                 .join("")
@@ -141,16 +183,7 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
                 <h2 className="text-xl font-bold tracking-tight text-foreground">
                   {profile.name}
                 </h2>
-                <Badge
-                  variant="outline"
-                  className={
-                    isSuperAdmin
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-bold"
-                      : "border-slate-300 bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300 text-xs font-medium"
-                  }
-                >
-                  {isSuperAdmin ? "Owner (Super Admin)" : "Admin Kasir"}
-                </Badge>
+                {getRoleBadge(profile.role)}
                 <Badge
                   variant="secondary"
                   className={
@@ -162,9 +195,9 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
                   {profile.isActive ? "Akun Aktif" : "Nonaktif"}
                 </Badge>
               </div>
-              <p className="text-xs font-mono text-muted-foreground flex items-center gap-2">
-                <Mail className="h-3.5 w-3.5" />
-                <span>{profile.email}</span>
+              <p className="text-xs font-mono text-muted-foreground flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5 text-primary" />
+                <span className="font-semibold text-foreground">@{profile.username || "pengguna"}</span>
               </p>
             </div>
           </div>
@@ -196,11 +229,25 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
                 <span>Informasi Akun</span>
               </CardTitle>
               <CardDescription className="text-xs text-muted-foreground">
-                Perbarui nama tampilan dan alamat email login Anda
+                Perbarui nama tampilan akun Anda
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
               <form onSubmit={handleSaveProfile} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-foreground">Username (ID Login)</label>
+                  <Input
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s+/g, ""))}
+                    placeholder="Masukkan username login"
+                    required
+                    className="h-10 text-sm font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Username digunakan untuk masuk (login) ke dalam sistem. Gunakan huruf kecil, angka, titik, underscore, atau minus.
+                  </p>
+                </div>
+
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-foreground">Nama Lengkap</label>
                   <Input
@@ -213,31 +260,22 @@ export function ProfileClient({ initialData }: ProfileClientProps) {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-foreground">Alamat Email</label>
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="contoh@gloriaponsel.com"
-                    required
-                    className="h-10 text-sm font-mono"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Email digunakan untuk masuk ke dalam sistem kasir Gloria Ponsel.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-foreground">Hak Akses Sistem</label>
                   <div className="p-3 rounded-xl border border-border bg-muted/30 flex items-center justify-between text-xs">
                     <div>
                       <p className="font-bold text-foreground">
-                        {isSuperAdmin ? "Super Admin (Owner)" : "Admin Kasir"}
+                        {profile.role === "owner" || profile.role === "super_admin"
+                          ? "Owner"
+                          : profile.role === "staff_gudang"
+                          ? "Staff Gudang"
+                          : "Admin Kasir"}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
-                        {isSuperAdmin
-                          ? "Memiliki kendali penuh atas toko, laporan, produk, dan pengaturan."
-                          : "Dikhususkan untuk operasional kasir penjualan dan cek unit ready."}
+                        {profile.role === "owner" || profile.role === "super_admin"
+                          ? "Memiliki kendali penuh atas toko, laporan, produk, manajemen user, dan pengaturan."
+                          : profile.role === "staff_gudang"
+                          ? "Dikhususkan untuk operasional gudang, pengelolaan data produk, dan cetak barcode."
+                          : "Dikhususkan untuk operasional kasir POS penjualan dan data pelanggan."}
                       </p>
                     </div>
                     <Badge variant="outline" className="text-[10px] font-mono">

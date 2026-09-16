@@ -14,6 +14,8 @@ import {
   Calendar,
   ShieldCheck,
   Camera,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,9 +38,19 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { ProductSchema, ProductFormValues } from "@/lib/validations/product.schema";
-import { createProduct, updateProduct, uploadProductImage } from "@/lib/actions/product.actions";
-import { BarcodeScannerModal, scanBarcodeFromFile } from "@/components/ui/barcode-scanner-modal";
+import {
+  ProductSchema,
+  ProductFormValues,
+} from "@/lib/validations/product.schema";
+import {
+  createProduct,
+  updateProduct,
+  uploadProductImage,
+} from "@/lib/actions/product.actions";
+import {
+  BarcodeScannerModal,
+  scanBarcodeFromFile,
+} from "@/components/ui/barcode-scanner-modal";
 import { compressImage } from "@/lib/image-compress";
 
 export interface ProductItem {
@@ -51,7 +63,10 @@ export interface ProductItem {
   color?: string | null;
   completeness?: string | null;
   retailSupplier?: string | null;
+  grade?: string | null;
   status?: string;
+  warrantyDays?: number | null;
+  warrantyExpiry?: string | null;
   entryDate?: string | null;
   brandName?: string | null;
   categoryName?: string | null;
@@ -64,6 +79,7 @@ export interface ProductItem {
   minStock: number;
   imageUrl: string | null;
   description: string | null;
+  rejectionReason?: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -113,6 +129,14 @@ const COMMON_COMPLETENESS = [
   "Unit Baru Segel (BNIB)",
 ];
 
+const COMMON_GRADES = [
+  "Grade A",
+  "Grade B",
+  "Grade C",
+  "Like New",
+  "Baru / BNIB",
+];
+
 const COMMON_ACCESSORY_CATEGORIES = [
   "Charger / Adapter",
   "Kabel Data",
@@ -137,12 +161,14 @@ export function ProductFormSheet({
   const [isUploading, setIsUploading] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [activeScanTarget, setActiveScanTarget] = useState<"imei" | "sku">("imei");
+  const [activeScanTarget, setActiveScanTarget] = useState<"imei" | "sku">(
+    "imei",
+  );
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
 
   const handleDirectPhotoScan = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    target: "imei" | "sku"
+    target: "imei" | "sku",
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -157,12 +183,15 @@ export function ProductFormSheet({
           target === "imei"
             ? `IMEI berhasil di-scan: ${val}`
             : `SKU / Barcode berhasil di-scan: ${val}`,
-          { id: toastId }
+          { id: toastId },
         );
       } else {
-        toast.error("Barcode tidak terdeteksi. Pastikan foto tegak, jelas, dan dekat.", {
-          id: toastId,
-        });
+        toast.error(
+          "Barcode tidak terdeteksi. Pastikan foto tegak, jelas, dan dekat.",
+          {
+            id: toastId,
+          },
+        );
       }
     } catch {
       toast.error("Gagal membaca barcode dari foto.", { id: toastId });
@@ -186,6 +215,7 @@ export function ProductFormSheet({
       color: "",
       completeness: "Fullset Original",
       retailSupplier: "",
+      grade: "",
       categoryName: "",
       sku: "",
       variant: "",
@@ -195,7 +225,7 @@ export function ProductFormSheet({
       minStock: 5,
       imageUrl: "",
       description: "",
-      status: "available",
+      status: isSuperAdmin ? "available" : "menunggu_persetujuan",
       isActive: true,
     },
   });
@@ -204,7 +234,8 @@ export function ProductFormSheet({
 
   useEffect(() => {
     if (editingProduct) {
-      const type = (editingProduct.productType as "phone" | "accessory") || "phone";
+      const type =
+        (editingProduct.productType as "phone" | "accessory") || "phone";
       const cleanStr = (val?: string | null) => {
         if (!val || val.trim() === "" || val.trim() === "-") return "";
         return val.trim();
@@ -232,10 +263,14 @@ export function ProductFormSheet({
         brandName: cleanStr(editingProduct.brandName),
         capacity: cleanStr(editingProduct.capacity),
         color: cleanStr(editingProduct.color),
-        completeness: cleanStr(editingProduct.completeness) || "Fullset Original",
+        completeness:
+          cleanStr(editingProduct.completeness) || "Fullset Original",
         retailSupplier: cleanStr(editingProduct.retailSupplier),
+        grade: cleanStr((editingProduct as any).grade),
         categoryName: cleanStr(editingProduct.categoryName),
-        sku: cleanStr(editingProduct.sku) || (type === "phone" ? resolvedImei : ""),
+        sku:
+          cleanStr(editingProduct.sku) ||
+          (type === "phone" ? resolvedImei : ""),
         variant: cleanStr(editingProduct.variant),
         purchasePrice: editingProduct.purchasePrice ?? 0,
         sellingPrice: editingProduct.sellingPrice ?? 0,
@@ -243,15 +278,20 @@ export function ProductFormSheet({
           typeof editingProduct.stock === "number"
             ? editingProduct.stock
             : type === "phone"
-            ? 1
-            : 10,
+              ? 1
+              : 10,
         minStock:
           typeof editingProduct.minStock === "number"
             ? editingProduct.minStock
             : 5,
         imageUrl: editingProduct.imageUrl || "",
         description: cleanStr(editingProduct.description),
-        status: (editingProduct.status as any) || "available",
+        status:
+          editingProduct.status === "ditolak" || !isSuperAdmin
+            ? "menunggu_persetujuan"
+            : editingProduct.status === "sold"
+              ? "sold"
+              : "available",
         isActive: editingProduct.isActive ?? true,
       });
       setPreviewImage(editingProduct.imageUrl || null);
@@ -275,12 +315,12 @@ export function ProductFormSheet({
         minStock: 5,
         imageUrl: "",
         description: "",
-        status: "available",
+        status: isSuperAdmin ? "available" : "menunggu_persetujuan",
         isActive: true,
       });
       setPreviewImage(null);
     }
-  }, [editingProduct, initialType, form, open]);
+  }, [editingProduct, initialType, form, open, isSuperAdmin]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -324,8 +364,24 @@ export function ProductFormSheet({
   const onSubmit = async (values: ProductFormValues) => {
     setIsLoading(true);
     try {
+      const payload: ProductFormValues = {
+        ...values,
+        status: isSuperAdmin
+          ? values.status || "available"
+          : "menunggu_persetujuan",
+        purchasePrice: isSuperAdmin
+          ? values.purchasePrice
+          : (editingProduct?.purchasePrice ?? 0),
+        sellingPrice: isSuperAdmin
+          ? values.sellingPrice
+          : (editingProduct?.sellingPrice ?? 0),
+        grade: isSuperAdmin
+          ? values.grade
+          : ((editingProduct as any)?.grade ?? null),
+      };
+
       if (editingProduct) {
-        const res = await updateProduct(editingProduct.id, values);
+        const res = await updateProduct(editingProduct.id, payload);
         if (res.error) {
           toast.error(res.error);
         } else {
@@ -334,11 +390,15 @@ export function ProductFormSheet({
           onOpenChange(false);
         }
       } else {
-        const res = await createProduct(values);
+        const res = await createProduct(payload);
         if (res.error) {
           toast.error(res.error);
         } else {
-          toast.success("Produk baru berhasil ditambahkan & stok awal tercatat!");
+          toast.success(
+            isSuperAdmin
+              ? "Produk baru berhasil ditambahkan & stok awal tercatat!"
+              : "Produk berhasil disimpan dan menunggu persetujuan Owner.",
+          );
           onSuccess();
           onOpenChange(false);
         }
@@ -359,15 +419,40 @@ export function ProductFormSheet({
         >
           <SheetHeader className="pb-4 border-b border-border">
             <SheetTitle className="text-xl font-bold text-foreground">
-              {editingProduct ? "Edit Unit Produk" : "Input Produk & Stok Masuk"}
+              {editingProduct
+                ? "Edit Unit Produk"
+                : "Input Produk & Stok Masuk"}
             </SheetTitle>
             <SheetDescription>
-              Tambah unit handphone atau aksesoris. Stok masuk akan otomatis terdata dalam sistem.
+              Tambah unit handphone atau aksesoris. Stok masuk akan otomatis
+              terdata dalam sistem.
             </SheetDescription>
           </SheetHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 pt-4">
+            <form
+              onSubmit={form.handleSubmit(onSubmit, (errors) => {
+                const firstError = Object.values(errors)[0]?.message;
+                if (firstError) toast.error(String(firstError));
+              })}
+              className="space-y-5 pt-4"
+            >
+              {/* Alert Catatan Penolakan dari Owner jika status ditolak */}
+              {editingProduct?.status === "ditolak" && (
+                <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-900 dark:text-rose-200 space-y-2 shadow-xs">
+                  <div className="flex items-center gap-2 font-bold text-xs sm:text-sm text-rose-700 dark:text-rose-300">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span>Catatan Penolakan dari Owner:</span>
+                  </div>
+                  <p className="text-xs font-semibold pl-6 text-foreground bg-background/80 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 whitespace-pre-wrap">
+                    &ldquo;{editingProduct.rejectionReason || "Data unit belum sesuai ketentuan, silakan perbaiki."}&rdquo;
+                  </p>
+                  <p className="text-[11px] text-muted-foreground pl-6">
+                    Perbaiki data di bawah sesuai catatan owner. Setelah disimpan, status produk akan otomatis kembali menjadi <strong className="text-foreground">Menunggu Persetujuan</strong> dan diajukan ulang ke owner.
+                  </p>
+                </div>
+              )}
+
               {/* Product Type Toggle (Phone vs Aksesoris) */}
               <div>
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
@@ -424,7 +509,11 @@ export function ProductFormSheet({
                         <span>Tgl Masuk Unit *</span>
                       </FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} value={field.value || getTodayString()} />
+                        <Input
+                          type="date"
+                          {...field}
+                          value={field.value || getTodayString()}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -504,7 +593,9 @@ export function ProductFormSheet({
                                 capture="environment"
                                 className="hidden"
                                 disabled={isProcessingPhoto}
-                                onChange={(e) => handleDirectPhotoScan(e, "imei")}
+                                onChange={(e) =>
+                                  handleDirectPhotoScan(e, "imei")
+                                }
                               />
                             </label>
                           </div>
@@ -523,7 +614,8 @@ export function ProductFormSheet({
                           </div>
                         </FormControl>
                         <p className="text-[11px] text-muted-foreground">
-                          IMEI akan otomatis diubah menjadi barcode Code 128 untuk ditempel pada unit.
+                          IMEI akan otomatis diubah menjadi barcode Code 128
+                          untuk ditempel pada unit.
                         </p>
                         <FormMessage />
                       </FormItem>
@@ -565,7 +657,9 @@ export function ProductFormSheet({
                                 capture="environment"
                                 className="hidden"
                                 disabled={isProcessingPhoto}
-                                onChange={(e) => handleDirectPhotoScan(e, "sku")}
+                                onChange={(e) =>
+                                  handleDirectPhotoScan(e, "sku")
+                                }
                               />
                             </label>
                           </div>
@@ -596,16 +690,20 @@ export function ProductFormSheet({
                               value={field.value || ""}
                             />
                             <div className="flex flex-wrap gap-1">
-                              {COMMON_ACCESSORY_CATEGORIES.slice(0, 4).map((c) => (
-                                <button
-                                  key={c}
-                                  type="button"
-                                  onClick={() => form.setValue("categoryName", c)}
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-primary/10 hover:text-primary transition border border-border/50 text-muted-foreground"
-                                >
-                                  + {c.split(" ")[0]}
-                                </button>
-                              ))}
+                              {COMMON_ACCESSORY_CATEGORIES.slice(0, 4).map(
+                                (c) => (
+                                  <button
+                                    key={c}
+                                    type="button"
+                                    onClick={() =>
+                                      form.setValue("categoryName", c)
+                                    }
+                                    className="text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-primary/10 hover:text-primary transition border border-border/50 text-muted-foreground"
+                                  >
+                                    + {c.split(" ")[0]}
+                                  </button>
+                                ),
+                              )}
                             </div>
                           </div>
                         </FormControl>
@@ -662,7 +760,9 @@ export function ProductFormSheet({
                                   <button
                                     key={cap}
                                     type="button"
-                                    onClick={() => form.setValue("capacity", cap)}
+                                    onClick={() =>
+                                      form.setValue("capacity", cap)
+                                    }
                                     className="text-[10px] px-1.5 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
                                   >
                                     {cap}
@@ -696,38 +796,79 @@ export function ProductFormSheet({
                     />
                   </div>
 
-                  {/* Kelengkapan */}
-                  <FormField
-                    control={form.control}
-                    name="completeness"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Kelengkapan Unit *</FormLabel>
-                        <FormControl>
-                          <div className="space-y-1.5">
-                            <Input
-                              placeholder="Contoh: Fullset Original, Batangan, Unit + Box..."
-                              {...field}
-                              value={field.value || ""}
-                            />
-                            <div className="flex flex-wrap gap-1">
-                              {COMMON_COMPLETENESS.map((comp) => (
-                                <button
-                                  key={comp}
-                                  type="button"
-                                  onClick={() => form.setValue("completeness", comp)}
-                                  className="text-[10px] px-2 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
-                                >
-                                  {comp}
-                                </button>
-                              ))}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Kelengkapan */}
+                    <FormField
+                      control={form.control}
+                      name="completeness"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Kelengkapan Unit *</FormLabel>
+                          <FormControl>
+                            <div className="space-y-1.5">
+                              <Input
+                                placeholder="Contoh: Fullset Original, Batangan, Unit + Box..."
+                                {...field}
+                                value={field.value || ""}
+                              />
+                              <div className="flex flex-wrap gap-1">
+                                {COMMON_COMPLETENESS.map((comp) => (
+                                  <button
+                                    key={comp}
+                                    type="button"
+                                    onClick={() =>
+                                      form.setValue("completeness", comp)
+                                    }
+                                    className="text-[10px] px-2 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
+                                  >
+                                    {comp}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Grade Unit - Hanya untuk Super Admin / Owner */}
+                    {isSuperAdmin && (
+                      <FormField
+                        control={form.control}
+                        name="grade"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Grade Kondisi Unit</FormLabel>
+                            <FormControl>
+                              <div className="space-y-1.5">
+                                <Input
+                                  placeholder="Contoh: Grade A, Grade B, Like New..."
+                                  {...field}
+                                  value={field.value || ""}
+                                />
+                                <div className="flex flex-wrap gap-1">
+                                  {COMMON_GRADES.map((gr) => (
+                                    <button
+                                      key={gr}
+                                      type="button"
+                                      onClick={() =>
+                                        form.setValue("grade", gr)
+                                      }
+                                      className="text-[10px] px-2 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
+                                    >
+                                      {gr}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                  />
+                  </div>
                 </div>
               )}
 
@@ -750,80 +891,76 @@ export function ProductFormSheet({
                 )}
               />
 
-              {/* Harga Modal (HPP) & Harga Jual Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="purchasePrice"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                        <span>HPP (Harga Modal) *</span>
-                        {!isSuperAdmin && (
-                          <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-normal">
-                            Super Admin only
-                          </span>
-                        )}
-                      </FormLabel>
-                      <FormControl>
-                        <CurrencyInput
-                          placeholder="0"
-                          disabled={!isSuperAdmin && !!editingProduct}
-                          value={field.value}
-                          onValueChange={(val) => field.onChange(val)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              {/* Harga Modal (HPP) & Harga Jual Grid - Hanya untuk Super Admin / Owner */}
+              {isSuperAdmin && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="purchasePrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1.5">
+                          <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                          <span>HPP (Harga Modal) *</span>
+                        </FormLabel>
+                        <FormControl>
+                          <CurrencyInput
+                            placeholder="0"
+                            value={field.value}
+                            onValueChange={(val) => field.onChange(val)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="sellingPrice"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Harga Jual (Rp) *</FormLabel>
-                      <FormControl>
-                        <CurrencyInput
-                          placeholder="0"
-                          value={field.value}
-                          onValueChange={(val) => field.onChange(val)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                  <FormField
+                    control={form.control}
+                    name="sellingPrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Harga Jual (Rp) *</FormLabel>
+                        <FormControl>
+                          <CurrencyInput
+                            placeholder="0"
+                            value={field.value}
+                            onValueChange={(val) => field.onChange(val)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
 
               {/* Status Unit */}
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status Unit</FormLabel>
-                    <FormControl>
-                      <select
-                        {...field}
-                        value={field.value || "available"}
-                        onChange={(e) => field.onChange(e.target.value)}
-                        className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-semibold ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 text-foreground cursor-pointer"
-                      >
-                        <option value="available">Tersedia (Ready Stock)</option>
-                        <option value="retur">Retur (Barang Retur)</option>
-                        <option value="sold">Terjual (Sold)</option>
-                      </select>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {isSuperAdmin && (
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status Produk</FormLabel>
+                      <FormControl>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          {...field}
+                        >
+                          <option value="available">Ready</option>
+                          <option value="sold">Terjual</option>
+                          <option value="menunggu_persetujuan">Menunggu Persetujuan</option>
+                        </select>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               {/* Aksesoris: Stok Awal & Min Stok (HP auto 1 stok) */}
-              {selectedProductType === "accessory" ? (
+              {selectedProductType === "accessory" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -832,7 +969,12 @@ export function ProductFormSheet({
                       <FormItem>
                         <FormLabel>Stok Awal Masuk (Pcs) *</FormLabel>
                         <FormControl>
-                          <Input type="number" min={0} {...field} value={field.value ?? 0} />
+                          <Input
+                            type="number"
+                            min={0}
+                            {...field}
+                            value={field.value ?? 0}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -846,17 +988,17 @@ export function ProductFormSheet({
                       <FormItem>
                         <FormLabel>Batas Minimum Stok *</FormLabel>
                         <FormControl>
-                          <Input type="number" min={0} {...field} value={field.value ?? 5} />
+                          <Input
+                            type="number"
+                            min={0}
+                            {...field}
+                            value={field.value ?? 5}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
-              ) : (
-                <div className="p-3 bg-muted/40 rounded-xl text-xs text-muted-foreground flex items-center justify-between border border-border">
-                  <span>Unit handphone dihitung 1 unit spesifik per IMEI.</span>
-                  <span className="font-semibold text-primary">Stok: 1 Unit</span>
                 </div>
               )}
 
@@ -876,7 +1018,9 @@ export function ProductFormSheet({
                         {isUploading && (
                           <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white backdrop-blur-[1px]">
                             <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                            <span className="text-[9px] mt-1 font-semibold">Mengompres</span>
+                            <span className="text-[9px] mt-1 font-semibold">
+                              Mengompres
+                            </span>
                           </div>
                         )}
                         {!isUploading && (
@@ -906,7 +1050,9 @@ export function ProductFormSheet({
                         ) : (
                           <Upload className="h-3.5 w-3.5" />
                         )}
-                        <span>{isUploading ? "Memproses..." : "Pilih dari Galeri"}</span>
+                        <span>
+                          {isUploading ? "Memproses..." : "Pilih dari Galeri"}
+                        </span>
                         <input
                           type="file"
                           accept="image/*"
@@ -931,31 +1077,13 @@ export function ProductFormSheet({
                       </label>
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                      Foto otomatis dioptimalkan cepat (WebP) agar hemat memori dan proses upload instan.
+                      Foto otomatis dioptimalkan cepat (WebP) agar hemat memori
+                      dan proses upload instan.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Deskripsi */}
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Catatan / Garansi Toko</FormLabel>
-                    <FormControl>
-                      <textarea
-                        placeholder="Contoh: Garansi resmi s/d Des 2026, kondisi mulus 99%, battery health 100%..."
-                        className="flex min-h-[70px] w-full rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        value={field.value || ""}
-                        onChange={field.onChange}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
               {/* Action Buttons */}
               <div className="pt-4 border-t border-border flex items-center justify-end gap-3">
@@ -1001,7 +1129,11 @@ export function ProductFormSheet({
             toast.success(`SKU / Barcode berhasil di-scan: ${scannedVal}`);
           }
         }}
-        title={activeScanTarget === "imei" ? "Scan Barcode IMEI Unit" : "Scan Barcode SKU Aksesoris"}
+        title={
+          activeScanTarget === "imei"
+            ? "Scan Barcode IMEI Unit"
+            : "Scan Barcode SKU Aksesoris"
+        }
         description={
           activeScanTarget === "imei"
             ? "Arahkan kamera ke barcode garis (1D) IMEI dus HP atau unit perangkat."

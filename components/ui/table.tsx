@@ -1,19 +1,107 @@
+"use client";
+
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef<
-  HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto">
-    <table
-      ref={ref}
-      className={cn("w-full caption-bottom text-sm", className)}
-      {...props}
-    />
-  </div>
-));
+export interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  showTopScrollbar?: boolean;
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, showTopScrollbar = true, ...props }, ref) => {
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const topScrollRef = React.useRef<HTMLDivElement>(null);
+    const [scrollWidth, setScrollWidth] = React.useState<number>(0);
+    const [hasOverflow, setHasOverflow] = React.useState<boolean>(false);
+    const isSyncingRef = React.useRef<boolean>(false);
+
+    React.useEffect(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const updateDimensions = () => {
+        if (!container) return;
+        const sw = container.scrollWidth;
+        const cw = container.clientWidth;
+        setScrollWidth(sw);
+        setHasOverflow(sw > cw + 4);
+      };
+
+      updateDimensions();
+
+      const observer = new ResizeObserver(() => {
+        updateDimensions();
+      });
+
+      observer.observe(container);
+      if (container.firstElementChild) {
+        observer.observe(container.firstElementChild);
+      }
+
+      return () => {
+        observer.disconnect();
+      };
+    }, []);
+
+    const handleTopScroll = () => {
+      if (isSyncingRef.current) return;
+      if (containerRef.current && topScrollRef.current) {
+        isSyncingRef.current = true;
+        containerRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+        requestAnimationFrame(() => {
+          isSyncingRef.current = false;
+        });
+      }
+    };
+
+    const handleBottomScroll = () => {
+      if (isSyncingRef.current) return;
+      if (containerRef.current && topScrollRef.current) {
+        isSyncingRef.current = true;
+        topScrollRef.current.scrollLeft = containerRef.current.scrollLeft;
+        requestAnimationFrame(() => {
+          isSyncingRef.current = false;
+        });
+      }
+    };
+
+    return (
+      <div className="relative w-full">
+        {/* Top Synchronized Horizontal Scrollbar (hanya tampil jika tabel meluap/overflow horizontal) */}
+        {showTopScrollbar && hasOverflow && (
+          <div
+            ref={topScrollRef}
+            onScroll={handleTopScroll}
+            className="w-full overflow-x-auto overflow-y-hidden border-b border-border/50 bg-muted/20 table-scrollbar-top select-none"
+            style={{ height: "11px" }}
+            aria-hidden="true"
+          >
+            <div
+              style={{
+                width: `${scrollWidth}px`,
+                height: "1px",
+              }}
+            />
+          </div>
+        )}
+
+        {/* Main Table Viewport with Bottom Scrollbar */}
+        <div
+          ref={containerRef}
+          onScroll={handleBottomScroll}
+          className="relative w-full overflow-auto"
+        >
+          <table
+            ref={ref}
+            className={cn("w-full caption-bottom text-sm", className)}
+            {...props}
+          />
+        </div>
+      </div>
+    );
+  }
+);
 Table.displayName = "Table";
 
 const TableHeader = React.forwardRef<

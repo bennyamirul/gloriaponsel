@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
@@ -27,6 +27,7 @@
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",
     "jose": "^6.2.12",
     "lucide-react": "^0.469.0",

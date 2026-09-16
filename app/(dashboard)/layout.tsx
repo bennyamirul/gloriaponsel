@@ -17,7 +17,7 @@ export default async function DashboardLayout({
     <DashboardShell
       title="Dashboard Toko"
       userRole={user.role}
-      userName={user.name}
+      userName={user.name || user.username || "Pengguna"}
     >
       {children}
     </DashboardShell>

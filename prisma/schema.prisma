@@ -5,13 +5,17 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 enum Role {
+  owner
+  admin_kasir
+  staff_gudang
   super_admin
   admin
+  staff_keuangan
 }
 
 enum MovementType {
@@ -39,102 +43,55 @@ enum SaleStatus {
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  name         String
-  email        String   @unique
+  id           String   @id @default(uuid())
+  username     String?  @unique
+  name         String?
+  email        String?  @unique
   passwordHash String   @map("password_hash")
-  role         Role     @default(admin)
+  role         Role     @default(admin_kasir)
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  stockMovements StockMovement[]
-  purchases      Purchase[]
-  sales          Sale[]
+  stockMovements  StockMovement[]
+  sales           Sale[]
+  dailyExpenses   DailyExpense[]
+  monthlyExpenses MonthlyExpense[]
+  notifications   Notification[]
 
   @@map("users")
 }
 
-model Category {
-  id          String    @id @default(uuid()) @db.Uuid
-  name        String    @unique
-  description String?
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  products    Product[]
-
-  @@map("categories")
-}
-
-model Brand {
-  id        String    @id @default(uuid()) @db.Uuid
-  name      String    @unique
-  logoUrl   String?   @map("logo_url")
-  isActive  Boolean   @default(true) @map("is_active")
-  createdAt DateTime  @default(now()) @map("created_at")
-  products  Product[]
-
-  @@map("brands")
-}
-
-model Supplier {
-  id        String     @id @default(uuid()) @db.Uuid
-  name      String
-  phone     String
-  address   String?
-  isActive  Boolean    @default(true) @map("is_active")
-  createdAt DateTime   @default(now()) @map("created_at")
-  purchases Purchase[]
-
-  @@map("suppliers")
-}
-
-model Customer {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  phone     String?
-  address   String?
-  createdAt DateTime @default(now()) @map("created_at")
-  sales     Sale[]
-
-  @@map("customers")
-}
-
 model Product {
-  id             String   @id @default(uuid()) @db.Uuid
-  name           String
-  brandId        String?  @map("brand_id") @db.Uuid
-  categoryId     String?  @map("category_id") @db.Uuid
-  brandName      String?  @map("brand_name")
-  categoryName   String?  @map("category_name")
-  sku            String   @unique
-  imei           String?  @unique
-  productType    String   @default("phone") @map("product_type") // 'phone' | 'accessory'
-  capacity       String?
-  color          String?
-  completeness   String?
-  retailSupplier String?  @map("retail_supplier")
-  status         String   @default("available") // 'available' | 'sold'
-  entryDate      DateTime @default(now()) @map("entry_date")
-  variant        String?
-  purchasePrice  Decimal  @map("purchase_price") @db.Decimal(15, 2)
-  sellingPrice   Decimal  @map("selling_price") @db.Decimal(15, 2)
-  stock          Int      @default(0)
-  minStock       Int      @default(5) @map("min_stock")
-  imageUrl       String?  @map("image_url")
-  description    String?  @db.Text
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(uuid())
+  name            String
+  brandName       String?  @map("brand_name")
+  categoryName    String?  @map("category_name")
+  sku             String   @unique
+  imei            String?  @unique
+  productType     String   @default("phone") @map("product_type") // 'phone' | 'accessory'
+  capacity        String?
+  color           String?
+  completeness    String?
+  retailSupplier  String?  @map("retail_supplier")
+  grade           String?
+  status          String   @default("available") // 'available' | 'sold'
+  entryDate       DateTime @default(now()) @map("entry_date")
+  variant         String?
+  purchasePrice   Decimal  @map("purchase_price") @db.Decimal(15, 2)
+  sellingPrice    Decimal  @map("selling_price") @db.Decimal(15, 2)
+  stock           Int      @default(0)
+  minStock        Int      @default(5) @map("min_stock")
+  imageUrl        String?  @map("image_url")
+  description     String?  @db.Text
+  rejectionReason String?  @map("rejection_reason") @db.Text
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  brand          Brand?          @relation(fields: [brandId], references: [id], onDelete: SetNull)
-  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   stockMovements StockMovement[]
-  purchaseItems  PurchaseItem[]
   saleItems      SaleItem[]
 
-  @@index([brandId])
-  @@index([categoryId])
   @@index([isActive])
   @@index([stock])
   @@index([imei])
@@ -144,14 +101,14 @@ model Product {
 }
 
 model StockMovement {
-  id            String        @id @default(uuid()) @db.Uuid
-  productId     String        @map("product_id") @db.Uuid
+  id            String        @id @default(uuid())
+  productId     String        @map("product_id")
   type          MovementType
   quantity      Int // positif untuk in, negatif untuk out/adjustment turun
   referenceType ReferenceType @map("reference_type")
   referenceId   String?       @map("reference_id")
   note          String?       @db.Text
-  createdById   String        @map("created_by") @db.Uuid
+  createdById   String        @map("created_by")
   createdAt     DateTime      @default(now()) @map("created_at")
 
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
@@ -163,69 +120,41 @@ model StockMovement {
   @@map("stock_movements")
 }
 
-model Purchase {
-  id           String   @id @default(uuid()) @db.Uuid
-  invoiceNo    String   @map("invoice_no")
-  supplierId   String   @map("supplier_id") @db.Uuid
-  purchaseDate DateTime @default(now()) @map("purchase_date")
-  createdById  String   @map("created_by") @db.Uuid
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  supplier Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  creator  User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  items    PurchaseItem[]
-
-  @@index([supplierId])
-  @@index([createdAt])
-  @@map("purchases")
-}
-
-model PurchaseItem {
-  id         String  @id @default(uuid()) @db.Uuid
-  purchaseId String  @map("purchase_id") @db.Uuid
-  productId  String  @map("product_id") @db.Uuid
-  qty        Int
-  unitCost   Decimal @map("unit_cost") @db.Decimal(15, 2)
-  subtotal   Decimal @db.Decimal(15, 2)
-
-  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-
-  @@index([purchaseId])
-  @@index([productId])
-  @@map("purchase_items")
-}
-
 model Sale {
-  id             String        @id @default(uuid()) @db.Uuid
+  id             String        @id @default(uuid())
   invoiceNo      String        @unique @map("invoice_no")
-  customerId     String?       @map("customer_id") @db.Uuid
+  customerName   String?       @map("customer_name")
+  customerPhone  String?       @map("customer_phone")
   subtotal       Decimal       @db.Decimal(15, 2)
   discount       Decimal       @default(0) @db.Decimal(15, 2)
-  additionalFee  Decimal       @default(0) @map("additional_fee") @db.Decimal(15, 2)
+  additionalFee     Decimal       @default(0) @map("additional_fee") @db.Decimal(15, 2)
+  additionalFeeNote String?       @map("additional_fee_note") @db.Text
   warrantyDays   Int           @default(0) @map("warranty_days")
   warrantyExpiry DateTime?     @map("warranty_expiry")
-  total          Decimal       @db.Decimal(15, 2)
+  commission          Decimal       @default(0) @db.Decimal(15, 2)
+  commissionProofUrl  String?       @map("commission_proof_url")
+  paymentProofUrl     String?       @map("payment_proof_url")
+  total               Decimal       @db.Decimal(15, 2)
   paymentMethod  PaymentMethod @map("payment_method")
   status         SaleStatus    @default(completed)
-  cashierId      String        @map("cashier_id") @db.Uuid
+  cashierId      String        @map("cashier_id")
   createdAt      DateTime      @default(now()) @map("created_at")
 
-  customer Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  cashier  User       @relation(fields: [cashierId], references: [id], onDelete: Restrict)
-  items    SaleItem[]
+  cashier User       @relation(fields: [cashierId], references: [id], onDelete: Restrict)
+  items   SaleItem[]
 
   @@index([createdAt])
   @@index([invoiceNo])
   @@index([status])
   @@index([cashierId])
+  @@index([customerName])
   @@map("sales")
 }
 
 model SaleItem {
-  id             String    @id @default(uuid()) @db.Uuid
-  saleId         String    @map("sale_id") @db.Uuid
-  productId      String    @map("product_id") @db.Uuid
+  id             String    @id @default(uuid())
+  saleId         String    @map("sale_id")
+  productId      String    @map("product_id")
   qty            Int
   unitPrice      Decimal   @map("unit_price") @db.Decimal(15, 2)
   unitCost       Decimal   @map("unit_cost") @db.Decimal(15, 2) // snapshot harga modal saat transaksi
@@ -246,7 +175,7 @@ model SaleItem {
 }
 
 model StoreSetting {
-  id              String   @id @default(uuid()) @db.Uuid
+  id              String   @id @default(uuid())
   storeName       String   @default("Gloria Ponsel") @map("store_name")
   phone           String?  @default("081234567890")
   address         String?  @default("Jl. Telekomunikasi No. 1, Jakarta")
@@ -256,5 +185,57 @@ model StoreSetting {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@map("store_settings")
+}
+
+model DailyExpense {
+  id          String   @id @default(uuid())
+  date        DateTime @default(now())
+  description String   @db.Text
+  amount      Decimal  @db.Decimal(15, 2)
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  creator     User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([date])
+  @@index([createdAt])
+  @@map("daily_expenses")
+}
+
+model MonthlyExpense {
+  id          String   @id @default(uuid())
+  month       Int      // 1 - 12
+  year        Int      // e.g. 2026
+  description String   @db.Text
+  amount      Decimal  @db.Decimal(15, 2)
+  createdById String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  creator     User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([month, year])
+  @@map("monthly_expenses")
+}
+
+model Notification {
+  id         String    @id @default(uuid())
+  userId     String?   @map("user_id")
+  targetRole Role?     @map("target_role")
+  title      String
+  message    String    @db.Text
+  type       String    // 'stock_approval' | 'transaction_out' | 'commission' | 'stock_status' | 'general'
+  link       String?
+  isRead     Boolean   @default(false) @map("is_read")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([targetRole])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
 }
 

@@ -5,7 +5,7 @@ import { SettingsClient } from "@/components/settings/settings-client";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
   const settings = await getStoreSettings();
 
   return (

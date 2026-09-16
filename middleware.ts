@@ -71,16 +71,63 @@ export async function middleware(request: NextRequest) {
   }
 
   // 3. Role-Based Route Guard (Lapis 1):
-  // User non-super_admin (admin biasa) dilarang mengakses rute khusus Super Admin
-  if (sessionUser && sessionUser.role !== "super_admin") {
-    const isSuperAdminOnly = SUPER_ADMIN_ONLY_ROUTES.some((route) =>
-      pathname.startsWith(route)
-    );
-    if (isSuperAdminOnly) {
-      // Redirect ke dashboard dengan indikator denied
-      const dashboardUrl = new URL("/dashboard", request.url);
-      dashboardUrl.searchParams.set("access_denied", "true");
-      return NextResponse.redirect(dashboardUrl);
+  if (sessionUser) {
+    const role = sessionUser.role;
+    const isOwner = role === "owner" || role === "super_admin";
+    const isWarehouse = role === "staff_gudang";
+    const isCashier = role === "admin_kasir" || role === "admin";
+    const isFinance = role === "staff_keuangan";
+
+    if (!isOwner) {
+      if (isWarehouse) {
+        // Staff Admin (Staff Gudang) diizinkan mengakses: /dashboard, /products, /stock, /sales/history, /profile
+        const isAllowedForWarehouse =
+          pathname.startsWith("/dashboard") ||
+          pathname.startsWith("/products") ||
+          pathname.startsWith("/stock") ||
+          pathname.startsWith("/sales/history") ||
+          pathname.startsWith("/profile");
+
+        if (!isAllowedForWarehouse && isProtectedRoute) {
+          const dashboardUrl = new URL("/dashboard", request.url);
+          dashboardUrl.searchParams.set("access_denied", "true");
+          return NextResponse.redirect(dashboardUrl);
+        }
+      } else if (isCashier) {
+        // Staff Marketing (Admin Kasir) diizinkan mengakses: /dashboard, /sales, /customers, /profile
+        const isAllowedForCashier =
+          pathname.startsWith("/dashboard") ||
+          pathname.startsWith("/sales") ||
+          pathname.startsWith("/customers") ||
+          pathname.startsWith("/profile");
+
+        if (!isAllowedForCashier && isProtectedRoute) {
+          const dashboardUrl = new URL("/dashboard", request.url);
+          dashboardUrl.searchParams.set("access_denied", "true");
+          return NextResponse.redirect(dashboardUrl);
+        }
+      } else if (isFinance) {
+        // Staff Keuangan hanya diizinkan mengakses: /dashboard, /reports/sales, /reports/expenses, /reports/financial, /profile
+        const isAllowedForFinance =
+          pathname.startsWith("/dashboard") ||
+          pathname.startsWith("/reports/sales") ||
+          pathname.startsWith("/reports/expenses") ||
+          pathname.startsWith("/reports/financial") ||
+          pathname.startsWith("/profile");
+
+        if (!isAllowedForFinance && isProtectedRoute) {
+          const dashboardUrl = new URL("/dashboard", request.url);
+          dashboardUrl.searchParams.set("access_denied", "true");
+          return NextResponse.redirect(dashboardUrl);
+        }
+      } else {
+        // Role tidak dikenal / fallback: batasi akses selain dashboard & profile
+        if (isProtectedRoute && !pathname.startsWith("/dashboard") && !pathname.startsWith("/profile")) {
+          const dashboardUrl = new URL("/dashboard", request.url);
+          dashboardUrl.searchParams.set("access_denied", "true");
+          return NextResponse.redirect(dashboardUrl);
+        }
+      }
     }
   }
 

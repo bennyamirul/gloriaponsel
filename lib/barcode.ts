@@ -28,6 +28,7 @@ const START_C = 105;
 export interface BarcodeOptions {
   includeText?: boolean; // Whether to render human readable text below barcode
   fontSize?: number; // Font size of text
+  preserveAspectRatio?: string; // e.g. "none" or "xMidYMid meet"
 }
 
 /**
@@ -115,7 +116,8 @@ export function generateBarcodeSvg(data: string, options: BarcodeOptions = {}): 
     ? `<text x="${totalModules / 2}" y="${barHeight + 14}" text-anchor="middle" font-family="monospace" font-size="${options.fontSize || 10}" font-weight="bold" fill="#000000">${text}</text>`
     : "";
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalModules} ${totalHeight}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">${rects}${textElement}</svg>`;
+  const par = options.preserveAspectRatio || "xMidYMid meet";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalModules} ${totalHeight}" width="100%" height="100%" preserveAspectRatio="${par}">${rects}${textElement}</svg>`;
 }
 
 export interface QrCodeOptions {

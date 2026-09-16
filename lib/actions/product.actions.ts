@@ -5,19 +5,26 @@ import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { db } from "@/lib/db";
 import { requireAuth, requireRole } from "@/lib/auth";
-import { ProductSchema, ProductFormValues } from "@/lib/validations/product.schema";
+import {
+  ProductSchema,
+  ProductFormValues,
+  ApproveProductSchema,
+  ApproveProductValues,
+} from "@/lib/validations/product.schema";
+import { createNotification } from "@/lib/actions/notification.actions";
 
 export interface GetProductsParams {
   query?: string;
   productType?: "phone" | "accessory" | "all";
-  status?: "available" | "sold" | "all";
+  status?: "available" | "sold" | "menunggu_persetujuan" | "all";
   page?: number;
   limit?: number;
 }
 
 export async function getProducts(params?: GetProductsParams) {
   const user = await requireAuth();
-  const isSuperAdmin = user.role === "super_admin";
+  const isOwner = user.role === "owner" || user.role === "super_admin";
+  const isWarehouse = user.role === "staff_gudang";
 
   const {
     query,
@@ -36,13 +43,13 @@ export async function getProducts(params?: GetProductsParams) {
   if (query && query.trim() !== "") {
     const q = query.trim();
     where.OR = [
-      { name: { contains: q, mode: "insensitive" } },
-      { sku: { contains: q, mode: "insensitive" } },
-      { imei: { contains: q, mode: "insensitive" } },
-      { capacity: { contains: q, mode: "insensitive" } },
-      { color: { contains: q, mode: "insensitive" } },
-      { brandName: { contains: q, mode: "insensitive" } },
-      { retailSupplier: { contains: q, mode: "insensitive" } },
+      { name: { contains: q } },
+      { sku: { contains: q } },
+      { imei: { contains: q } },
+      { capacity: { contains: q } },
+      { color: { contains: q } },
+      { brandName: { contains: q } },
+      { retailSupplier: { contains: q } },
     ];
   }
 
@@ -62,8 +69,15 @@ export async function getProducts(params?: GetProductsParams) {
       take: limit,
       orderBy: { createdAt: "desc" },
       include: {
-        category: { select: { id: true, name: true } },
-        brand: { select: { id: true, name: true, logoUrl: true } },
+        saleItems: {
+          orderBy: { sale: { createdAt: "desc" } },
+          take: 1,
+          select: {
+            warrantyDays: true,
+            warrantyExpiry: true,
+            isReturned: true,
+          },
+        },
       },
     }),
   ]);
@@ -78,19 +92,25 @@ export async function getProducts(params?: GetProductsParams) {
     color: p.color,
     completeness: p.completeness,
     retailSupplier: p.retailSupplier,
+    grade: isWarehouse ? null : ((p as any).grade ?? null),
     status: p.status || "available",
-    entryDate: p.entryDate ? p.entryDate.toISOString() : p.createdAt.toISOString(),
+    warrantyDays: p.saleItems[0]?.warrantyDays ?? null,
+    warrantyExpiry: p.saleItems[0]?.warrantyExpiry?.toISOString() ?? null,
+    entryDate: p.entryDate
+      ? p.entryDate.toISOString()
+      : p.createdAt.toISOString(),
     variant: p.variant,
-    brandId: p.brandId,
-    categoryId: p.categoryId,
-    brandName: p.brandName || p.brand?.name || "-",
-    categoryName: p.categoryName || p.category?.name || (p.productType === "phone" ? "Handphone" : "Aksesoris"),
-    sellingPrice: Number(p.sellingPrice),
-    purchasePrice: isSuperAdmin ? Number(p.purchasePrice) : null,
+    brandName: p.brandName || "-",
+    categoryName:
+      p.categoryName ||
+      (p.productType === "phone" ? "Handphone" : "Aksesoris"),
+    sellingPrice: isWarehouse ? 0 : Number(p.sellingPrice),
+    purchasePrice: isOwner ? Number(p.purchasePrice) : null,
     stock: p.stock,
     minStock: p.minStock,
     imageUrl: p.imageUrl,
     description: p.description,
+    rejectionReason: (p as any).rejectionReason || null,
     isActive: p.isActive,
     createdAt: p.createdAt.toISOString(),
   }));
@@ -100,7 +120,8 @@ export async function getProducts(params?: GetProductsParams) {
     total,
     page,
     totalPages: Math.ceil(total / limit),
-    isSuperAdmin,
+    isSuperAdmin: isOwner,
+    currentUserRole: user.role,
   };
 }
 
@@ -115,15 +136,9 @@ export async function getProductByImei(identifier: string) {
 
   const product = await db.product.findFirst({
     where: {
-      OR: [
-        { imei: cleaned },
-        { sku: cleaned },
-      ],
+      OR: [{ imei: cleaned }, { sku: cleaned }],
       isActive: true,
-    },
-    include: {
-      brand: { select: { id: true, name: true } },
-      category: { select: { id: true, name: true } },
+      status: "available",
     },
   });
 
@@ -139,9 +154,12 @@ export async function getProductByImei(identifier: string) {
     color: product.color,
     completeness: product.completeness,
     retailSupplier: product.retailSupplier,
+    grade: (product as any).grade ?? null,
     status: product.status,
-    brandName: product.brandName || product.brand?.name || "-",
-    categoryName: product.categoryName || product.category?.name || (product.productType === "phone" ? "Handphone" : "Aksesoris"),
+    brandName: product.brandName || "-",
+    categoryName:
+      product.categoryName ||
+      (product.productType === "phone" ? "Handphone" : "Aksesoris"),
     sellingPrice: Number(product.sellingPrice),
     purchasePrice: Number(product.purchasePrice),
     stock: product.stock,
@@ -152,7 +170,9 @@ export async function getProductByImei(identifier: string) {
 /**
  * Mengambil daftar stok yang berstatus tersedia untuk cetak label barcode SKU
  */
-export async function getAvailableStockForBarcodes(productType?: "phone" | "accessory" | "all") {
+export async function getAvailableStockForBarcodes(
+  productType?: "phone" | "accessory" | "all",
+) {
   await requireAuth();
 
   const where: any = {
@@ -168,7 +188,11 @@ export async function getAvailableStockForBarcodes(productType?: "phone" | "acce
     where.stock = { gt: 0 };
   } else {
     where.OR = [
-      { productType: "phone", status: { in: ["available", "retur"] }, stock: { gt: 0 } },
+      {
+        productType: "phone",
+        status: { in: ["available", "retur"] },
+        stock: { gt: 0 },
+      },
       { productType: "accessory", stock: { gt: 0 } },
     ];
   }
@@ -209,12 +233,15 @@ export async function getAvailableStockForBarcodes(productType?: "phone" | "acce
     sellingPrice: Number(p.sellingPrice),
     stock: p.stock,
     brandName: p.brandName || "Gloria Ponsel",
-    entryDate: p.entryDate ? p.entryDate.toISOString() : p.createdAt.toISOString(),
+    entryDate: p.entryDate
+      ? p.entryDate.toISOString()
+      : p.createdAt.toISOString(),
   }));
 }
 
 export async function createProduct(values: ProductFormValues) {
   const user = await requireAuth();
+  const isWarehouse = user.role === "staff_gudang";
 
   const validated = ProductSchema.safeParse(values);
   if (!validated.success) {
@@ -222,6 +249,12 @@ export async function createProduct(values: ProductFormValues) {
   }
 
   const data = validated.data;
+  if (isWarehouse) {
+    data.status = "menunggu_persetujuan";
+    data.purchasePrice = 0;
+    data.sellingPrice = 0;
+    data.grade = null;
+  }
 
   // For Phone, stock is 1 unit per unique IMEI
   const stock = data.productType === "phone" ? 1 : data.stock;
@@ -260,32 +293,76 @@ export async function createProduct(values: ProductFormValues) {
 
     // Perform atomic transaction: Create product AND Record initial stock movement
     await db.$transaction(async (tx) => {
-      const newProduct = await tx.product.create({
-        data: {
-          name: data.name,
-          sku,
-          imei,
-          productType: data.productType,
-          capacity: data.capacity || null,
-          color: data.color || null,
-          completeness: data.completeness || null,
-          retailSupplier: data.retailSupplier || null,
-          status: data.status || "available",
-          entryDate,
-          brandName: data.brandName || null,
-          categoryName: data.categoryName || (data.productType === "phone" ? "Handphone" : "Aksesoris"),
-          brandId: data.brandId || null,
-          categoryId: data.categoryId || null,
-          variant: data.variant || null,
-          purchasePrice: data.purchasePrice,
-          sellingPrice: data.sellingPrice,
-          stock,
-          minStock: data.minStock,
-          imageUrl: data.imageUrl || null,
-          description: data.description || null,
-          isActive: data.isActive,
-        },
-      });
+      const targetGrade = data.grade || null;
+      let newProduct: any;
+
+      try {
+        newProduct = await tx.product.create({
+          data: {
+            name: data.name,
+            sku,
+            imei,
+            productType: data.productType,
+            capacity: data.capacity || null,
+            color: data.color || null,
+            completeness: data.completeness || null,
+            retailSupplier: data.retailSupplier || null,
+            grade: targetGrade,
+            status: data.status || "available",
+            entryDate,
+            brandName: data.brandName || null,
+            categoryName:
+              data.categoryName ||
+              (data.productType === "phone" ? "Handphone" : "Aksesoris"),
+            variant: data.variant || null,
+            purchasePrice: data.purchasePrice,
+            sellingPrice: data.sellingPrice,
+            stock,
+            minStock: data.minStock,
+            imageUrl: data.imageUrl || null,
+            description: data.description || null,
+            isActive: data.isActive,
+          },
+        });
+      } catch (err: any) {
+        if (
+          err?.message?.includes("grade") ||
+          err?.message?.includes("Unknown argument") ||
+          err?.message?.includes("invocation")
+        ) {
+          newProduct = await tx.product.create({
+            data: {
+              name: data.name,
+              sku,
+              imei,
+              productType: data.productType,
+              capacity: data.capacity || null,
+              color: data.color || null,
+              completeness: data.completeness || null,
+              retailSupplier: data.retailSupplier || null,
+              status: data.status || "available",
+              entryDate,
+              brandName: data.brandName || null,
+              categoryName:
+                data.categoryName ||
+                (data.productType === "phone" ? "Handphone" : "Aksesoris"),
+              variant: data.variant || null,
+              purchasePrice: data.purchasePrice,
+              sellingPrice: data.sellingPrice,
+              stock,
+              minStock: data.minStock,
+              imageUrl: data.imageUrl || null,
+              description: data.description || null,
+              isActive: data.isActive,
+            },
+          });
+          if (targetGrade) {
+            await tx.$executeRaw`UPDATE products SET grade = ${targetGrade} WHERE id = ${newProduct.id}::uuid`;
+          }
+        } else {
+          throw err;
+        }
+      }
 
       // Automatically record initial incoming stock movement
       if (stock > 0) {
@@ -308,6 +385,29 @@ export async function createProduct(values: ProductFormValues) {
     revalidatePath("/stock");
     revalidatePath("/dashboard");
     revalidatePath("/sales");
+
+    if (isWarehouse) {
+      await createNotification({
+        targetRole: "owner",
+        title: "Barang Masuk Perlu Persetujuan",
+        message: `Produk "${data.name}" (${sku}) telah diinput oleh staf gudang (${user.name || "Gudang"}) dan menunggu persetujuan Anda.`,
+        type: "stock_approval",
+        link: "/products",
+      });
+    } else {
+      // Owner yang input langsung berstatus ready -> Kirim notifikasi ke Admin Kasir
+      if ((data.status === "available" || !data.status) && stock > 0) {
+        await createNotification({
+          targetRole: "admin_kasir",
+          title: "Barang Baru Ready",
+          message: `Unit "${data.name}" (${sku}) telah ditambahkan dan siap dijual (Ready).`,
+          type: "stock_status",
+          link: "/sales",
+          excludeUserId: user.id,
+        });
+      }
+    }
+
     return { success: true };
   } catch (error: any) {
     console.error("createProduct error:", error);
@@ -317,7 +417,8 @@ export async function createProduct(values: ProductFormValues) {
 
 export async function updateProduct(id: string, values: ProductFormValues) {
   const user = await requireAuth();
-  const isSuperAdmin = user.role === "super_admin";
+  const isOwner = user.role === "owner" || user.role === "super_admin";
+  const isWarehouse = user.role === "staff_gudang";
 
   const validated = ProductSchema.safeParse(values);
   if (!validated.success) {
@@ -331,6 +432,10 @@ export async function updateProduct(id: string, values: ProductFormValues) {
     const currentProduct = await db.product.findUnique({ where: { id } });
     if (!currentProduct) {
       return { error: "Produk tidak ditemukan." };
+    }
+
+    if (isWarehouse && currentProduct.status !== "ditolak") {
+      return { error: "Staff gudang hanya memiliki izin untuk mengedit produk yang ditolak oleh Owner." };
     }
 
     // Check SKU collision
@@ -359,42 +464,123 @@ export async function updateProduct(id: string, values: ProductFormValues) {
       }
     }
 
-    const purchasePrice = isSuperAdmin
+    const purchasePrice = isOwner
       ? data.purchasePrice
       : currentProduct.purchasePrice;
 
-    const entryDate = data.entryDate ? new Date(data.entryDate) : currentProduct.entryDate;
+    const sellingPrice = isOwner
+      ? data.sellingPrice
+      : currentProduct.sellingPrice;
 
-    await db.product.update({
-      where: { id },
-      data: {
-        name: data.name,
-        sku: data.sku || (data.productType === "phone" ? imei : null) || currentProduct.sku,
-        imei,
-        productType: data.productType,
-        capacity: data.capacity || null,
-        color: data.color || null,
-        completeness: data.completeness || null,
-        retailSupplier: data.retailSupplier || null,
-        entryDate,
-        brandName: data.brandName || null,
-        categoryName: data.categoryName || (data.productType === "phone" ? "Handphone" : currentProduct.categoryName || "Aksesoris"),
-        variant: data.variant || null,
-        purchasePrice,
-        sellingPrice: data.sellingPrice,
-        stock: data.productType === "phone" ? currentProduct.stock : data.stock,
-        minStock: data.minStock,
-        imageUrl: data.imageUrl || null,
-        description: data.description || null,
-        status: data.status || currentProduct.status,
-        isActive: data.isActive,
-      },
-    });
+    const entryDate = data.entryDate
+      ? new Date(data.entryDate)
+      : currentProduct.entryDate;
+
+    const targetGrade =
+      data.grade !== undefined
+        ? data.grade || null
+        : (currentProduct as any).grade;
+
+    const finalStatus = isWarehouse ? "menunggu_persetujuan" : (data.status || currentProduct.status);
+    const finalRejectionReason = isWarehouse ? null : ((currentProduct as any).rejectionReason || null);
+
+    try {
+      await db.product.update({
+        where: { id },
+        data: {
+          name: data.name,
+          sku:
+            data.sku ||
+            (data.productType === "phone" ? imei : null) ||
+            currentProduct.sku,
+          imei,
+          productType: data.productType,
+          capacity: data.capacity || null,
+          color: data.color || null,
+          completeness: data.completeness || null,
+          retailSupplier: data.retailSupplier || null,
+          grade: targetGrade,
+          entryDate,
+          brandName: data.brandName || null,
+          categoryName:
+            data.categoryName ||
+            (data.productType === "phone"
+              ? "Handphone"
+              : currentProduct.categoryName || "Aksesoris"),
+          variant: data.variant || null,
+          purchasePrice,
+          sellingPrice,
+          stock: data.productType === "phone" ? currentProduct.stock : data.stock,
+          minStock: data.minStock,
+          imageUrl: data.imageUrl || null,
+          description: data.description || null,
+          status: finalStatus,
+          rejectionReason: finalRejectionReason,
+          isActive: data.isActive,
+        },
+      });
+    } catch (err: any) {
+      if (
+        err?.message?.includes("grade") ||
+        err?.message?.includes("Unknown argument") ||
+        err?.message?.includes("invocation")
+      ) {
+        await db.product.update({
+          where: { id },
+          data: {
+            name: data.name,
+            sku:
+              data.sku ||
+              (data.productType === "phone" ? imei : null) ||
+              currentProduct.sku,
+            imei,
+            productType: data.productType,
+            capacity: data.capacity || null,
+            color: data.color || null,
+            completeness: data.completeness || null,
+            retailSupplier: data.retailSupplier || null,
+            entryDate,
+            brandName: data.brandName || null,
+            categoryName:
+              data.categoryName ||
+              (data.productType === "phone"
+                ? "Handphone"
+                : currentProduct.categoryName || "Aksesoris"),
+            variant: data.variant || null,
+            purchasePrice,
+            sellingPrice,
+            stock: data.productType === "phone" ? currentProduct.stock : data.stock,
+            minStock: data.minStock,
+            imageUrl: data.imageUrl || null,
+            description: data.description || null,
+            status: finalStatus,
+            rejectionReason: finalRejectionReason,
+            isActive: data.isActive,
+          },
+        });
+        if (targetGrade !== undefined) {
+          await db.$executeRaw`UPDATE products SET grade = ${targetGrade} WHERE id = ${id}::uuid`;
+        }
+      } else {
+        throw err;
+      }
+    }
 
     revalidatePath("/products");
     revalidatePath("/stock");
     revalidatePath("/dashboard");
     revalidatePath("/sales");
+
+    if (isWarehouse) {
+      await createNotification({
+        targetRole: "owner",
+        title: "Barang Masuk Diajukan Ulang",
+        message: `Produk "${data.name}" (${data.sku || currentProduct.sku}) telah diperbaiki oleh staf gudang dan menunggu persetujuan ulang Anda.`,
+        type: "stock_approval",
+        link: "/products",
+      });
+    }
+
     return { success: true };
   } catch (error: any) {
     console.error("updateProduct error:", error);
@@ -403,14 +589,14 @@ export async function updateProduct(id: string, values: ProductFormValues) {
 }
 
 /**
- * Memperbarui status produk (available / retur / sold) secara langsung dan opsional harga jual
+ * Memperbarui status produk (available / sold) secara langsung dan opsional harga jual
  */
 export async function updateProductStatus(
   id: string,
-  status: "available" | "retur" | "sold",
-  sellingPrice?: number
+  status: "available" | "sold" | string,
+  sellingPrice?: number,
 ) {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
 
   try {
     const product = await db.product.findUnique({ where: { id } });
@@ -418,8 +604,13 @@ export async function updateProductStatus(
       return { error: "Produk tidak ditemukan." };
     }
 
-    const updateData: any = { status };
-    if (typeof sellingPrice === "number" && !isNaN(sellingPrice) && sellingPrice > 0) {
+    const normalizedStatus = status === "sold" ? "sold" : "available";
+    const updateData: any = { status: normalizedStatus };
+    if (
+      typeof sellingPrice === "number" &&
+      !isNaN(sellingPrice) &&
+      sellingPrice > 0
+    ) {
       updateData.sellingPrice = sellingPrice;
     }
 
@@ -433,8 +624,7 @@ export async function updateProductStatus(
     revalidatePath("/sales");
     revalidatePath("/dashboard");
 
-    const statusLabel =
-      status === "retur" ? "Retur" : status === "available" ? "Ready Stock" : "Terjual";
+    const statusLabel = normalizedStatus === "available" ? "Ready" : "Terjual";
 
     return {
       success: true,
@@ -464,7 +654,11 @@ export async function toggleProductStatus(id: string, currentStatus: boolean) {
 }
 
 export async function deleteProduct(id: string) {
-  await requireAuth();
+  const user = await requireAuth();
+  if (user.role === "staff_gudang") {
+    return { error: "Staff gudang tidak memiliki izin untuk menghapus produk." };
+  }
+
   try {
     const saleItemsCount = await db.saleItem.count({
       where: { productId: id },
@@ -482,15 +676,13 @@ export async function deleteProduct(id: string) {
       revalidatePath("/sales");
       return {
         success: true,
-        message: "Produk dinonaktifkan dan dihapus dari katalog karena memiliki riwayat transaksi.",
+        message:
+          "Produk dinonaktifkan dan dihapus dari katalog karena memiliki riwayat transaksi.",
       };
     }
 
     await db.$transaction(async (tx) => {
       await tx.stockMovement.deleteMany({
-        where: { productId: id },
-      });
-      await tx.purchaseItem.deleteMany({
         where: { productId: id },
       });
       await tx.product.delete({
@@ -509,7 +701,126 @@ export async function deleteProduct(id: string) {
   }
 }
 
-export async function uploadProductImage(formData: FormData): Promise<{ url?: string; error?: string }> {
+/**
+ * Persetujuan produk oleh Owner (input grade, HPP, harga jual)
+ */
+export async function approveProduct(id: string, values: ApproveProductValues) {
+  await requireRole(["owner", "super_admin"]);
+
+  const validated = ApproveProductSchema.safeParse(values);
+  if (!validated.success) {
+    return { error: validated.error.errors[0]?.message || "Input persetujuan tidak valid." };
+  }
+
+  const { grade, purchasePrice, sellingPrice } = validated.data;
+
+  try {
+    const product = await db.product.findUnique({ where: { id } });
+    if (!product) {
+      return { error: "Produk tidak ditemukan." };
+    }
+
+    try {
+      await db.product.update({
+        where: { id },
+        data: {
+          grade,
+          purchasePrice,
+          sellingPrice,
+          status: "available",
+        },
+      });
+    } catch {
+      await db.product.update({
+        where: { id },
+        data: {
+          purchasePrice,
+          sellingPrice,
+          status: "available",
+        },
+      });
+      await db.$executeRaw`UPDATE products SET grade = ${grade} WHERE id = ${id}::uuid`;
+    }
+
+    revalidatePath("/products");
+    revalidatePath("/stock");
+    revalidatePath("/dashboard");
+    revalidatePath("/sales");
+
+    await createNotification({
+      targetRole: "staff_gudang",
+      title: "Barang Masuk Disetujui",
+      message: `Produk "${product.name}" (${product.sku}) telah disetujui oleh Owner dan kini aktif (Ready).`,
+      type: "stock_status",
+      link: "/products",
+    });
+
+    await createNotification({
+      targetRole: "admin_kasir",
+      title: "Barang Baru Ready",
+      message: `Unit "${product.name}" (${product.sku}) telah disetujui dan kini siap dijual (Ready).`,
+      type: "stock_status",
+      link: "/sales",
+    });
+
+    return {
+      success: true,
+      message: `Produk "${product.name}" berhasil disetujui dan kini berstatus aktif (Ready).`,
+    };
+  } catch (error: any) {
+    console.error("approveProduct error:", error);
+    return { error: error?.message || "Gagal menyetujui produk." };
+  }
+}
+
+/**
+ * Tolak produk oleh Owner (jika ditolak, barang langsung dihapus sehingga tidak masuk ke data)
+ */
+export async function rejectProduct(id: string, reason?: string) {
+  await requireRole(["owner", "super_admin"]);
+
+  try {
+    const product = await db.product.findUnique({ where: { id } });
+    if (!product) {
+      return { error: "Produk tidak ditemukan." };
+    }
+
+    const rejectionNote = reason && reason.trim() ? reason.trim() : "Ditolak oleh Owner";
+
+    await db.product.update({
+      where: { id },
+      data: {
+        status: "ditolak",
+        rejectionReason: rejectionNote,
+      },
+    });
+
+    revalidatePath("/products");
+    revalidatePath("/stock");
+    revalidatePath("/dashboard");
+    revalidatePath("/sales");
+
+    await createNotification({
+      targetRole: "staff_gudang",
+      title: "Barang Masuk Ditolak",
+      message: `Produk "${product.name}" ditolak oleh Owner. Alasan: ${rejectionNote}`,
+      type: "stock_status",
+      link: "/products",
+    });
+
+    return {
+      success: true,
+      message: `Produk "${product.name}" ditolak dengan catatan: "${rejectionNote}". Data dikembalikan ke Staf Gudang untuk diperbaiki.`,
+    };
+  } catch (error: any) {
+    console.error("rejectProduct error:", error);
+    return { error: error?.message || "Gagal menolak produk." };
+  }
+}
+
+export async function uploadProductImage(
+  formData: FormData,
+): Promise<{ url?: string; error?: string }> {
   await requireAuth();
 
   const file = formData.get("file") as File | null;

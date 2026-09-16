@@ -43,9 +43,10 @@ import {
 
 interface UserItem {
   id: string;
-  name: string;
-  email: string;
-  role: "super_admin" | "admin";
+  username?: string | null;
+  name?: string | null;
+  email?: string | null;
+  role: string;
   isActive: boolean;
   totalSalesCount: number;
   createdAt: string;
@@ -90,35 +91,75 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     }
   };
 
-  // Form states
-  const [newName, setNewName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
+  // Form states (Hanya Username, Password, dan Role)
+  const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newRole, setNewRole] = useState<"admin" | "super_admin">("admin");
+  const [newRole, setNewRole] = useState<"owner" | "admin_kasir" | "staff_gudang" | "staff_keuangan">("admin_kasir");
 
-  const [selectedRoleTarget, setSelectedRoleTarget] = useState<"admin" | "super_admin">("admin");
+  const [selectedRoleTarget, setSelectedRoleTarget] = useState<string>("admin_kasir");
   const [resetPasswordInput, setResetPasswordInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const filteredUsers = users.filter(
     (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
+      (u.username && u.username.toLowerCase().includes(search.toLowerCase())) ||
+      (u.name && u.name.toLowerCase().includes(search.toLowerCase())) ||
+      (u.email && u.email.toLowerCase().includes(search.toLowerCase()))
   );
 
-  // 1. Create New User
+  const getRoleBadge = (role: string) => {
+    if (role === "owner" || role === "super_admin") {
+      return (
+        <Badge
+          variant="outline"
+          className="border-indigo-300 bg-indigo-50 text-indigo-800 text-[10px] font-bold"
+        >
+          Owner
+        </Badge>
+      );
+    }
+    if (role === "staff_gudang") {
+      return (
+        <Badge
+          variant="outline"
+          className="border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-bold"
+        >
+          Staff Admin
+        </Badge>
+      );
+    }
+    if (role === "staff_keuangan") {
+      return (
+        <Badge
+          variant="outline"
+          className="border-blue-300 bg-blue-50 text-blue-800 text-[10px] font-bold"
+        >
+          Staff Keuangan
+        </Badge>
+      );
+    }
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px] font-medium"
+      >
+        Staff Marketing
+      </Badge>
+    );
+  };
+
+  // 1. Create New User (Username, Password, Role)
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newEmail || !newPassword) {
-      toast.error("Mohon lengkapi semua isian formulir.");
+    if (!newUsername.trim() || !newPassword) {
+      toast.error("Mohon isi username dan password.");
       return;
     }
 
     setIsLoading(true);
     try {
       const res = await createUser({
-        name: newName,
-        email: newEmail,
+        username: newUsername.trim(),
         password: newPassword,
         role: newRole,
       });
@@ -126,17 +167,18 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       if (res.error) {
         toast.error(res.error);
       } else {
-        toast.success(`Akun ${newName} berhasil dibuat!`);
+        const createdName = newUsername.trim();
+        toast.success(`Akun ${createdName} berhasil dibuat!`);
         setIsAddOpen(false);
-        setNewName("");
-        setNewEmail("");
+        setNewUsername("");
         setNewPassword("");
         // Optimistic refresh
         setUsers([
           {
             id: `temp-${Date.now()}`,
-            name: newName,
-            email: newEmail,
+            username: createdName,
+            name: createdName,
+            email: "-",
             role: newRole,
             isActive: true,
             totalSalesCount: 0,
@@ -182,11 +224,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     if (!roleUser) return;
     setIsLoading(true);
     try {
-      const res = await updateUserRole(roleUser.id, selectedRoleTarget);
+      const res = await updateUserRole(roleUser.id, selectedRoleTarget as any);
       if (res.error) {
         toast.error(res.error);
       } else {
-        toast.success(`Role ${roleUser.name} berhasil diubah menjadi ${selectedRoleTarget}`);
+        toast.success(`Role ${roleUser.username || roleUser.name} berhasil diubah!`);
         setUsers(
           users.map((u) => (u.id === roleUser.id ? { ...u, role: selectedRoleTarget } : u))
         );
@@ -236,7 +278,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
           className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm"
         >
           <UserPlus className="mr-1.5 h-4 w-4" />
-          Tambah Admin Baru
+          Tambah Pengguna Baru
         </Button>
       </div>
 
@@ -247,7 +289,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Cari nama atau email..."
+                placeholder="Cari username..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 text-xs h-9"
@@ -269,8 +311,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="border-b text-muted-foreground font-semibold">
-                      <th className="pb-3">Pengguna</th>
-                      <th className="pb-3">Email</th>
+                      <th className="pb-3">Username</th>
                       <th className="pb-3 text-center">Role</th>
                       <th className="pb-3 text-center">Status</th>
                       <th className="pb-3 text-center">Transaksi</th>
@@ -289,7 +330,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                               className="text-left font-semibold text-foreground hover:text-indigo-600 hover:underline transition-colors focus:outline-none flex items-center gap-1.5 group/name"
                               title="Klik untuk melihat detail & rekap transaksi"
                             >
-                              <span>{u.name}</span>
+                              <span>{u.username || u.name}</span>
                               <Eye className="h-3.5 w-3.5 text-muted-foreground group-hover/name:text-indigo-600 transition-colors opacity-70 group-hover/name:opacity-100" />
                             </button>
                             {u.id === currentUserId && (
@@ -299,18 +340,8 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                             )}
                           </div>
                         </td>
-                        <td className="py-3 font-mono text-muted-foreground">{u.email}</td>
                         <td className="py-3 text-center">
-                          <Badge
-                            variant="outline"
-                            className={
-                              u.role === "super_admin"
-                                ? "border-indigo-300 bg-indigo-50 text-indigo-800 text-[10px] font-bold"
-                                : "border-slate-300 bg-slate-100 text-slate-700 text-[10px] font-medium"
-                            }
-                          >
-                            {u.role === "super_admin" ? "Super Admin" : "Admin Kasir"}
-                          </Badge>
+                          {getRoleBadge(u.role)}
                         </td>
                         <td className="py-3 text-center">
                           <Badge
@@ -413,7 +444,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 font-bold text-indigo-700 text-xs">
-                          {u.name.charAt(0).toUpperCase()}
+                          {(u.username || u.name || "U").charAt(0).toUpperCase()}
                         </div>
                         <div>
                           <button
@@ -421,7 +452,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                             onClick={() => handleOpenUserDetail(u)}
                             className="text-left text-xs font-bold text-foreground hover:text-indigo-600 hover:underline transition-colors focus:outline-none flex items-center gap-1.5"
                           >
-                            <span>{u.name}</span>
+                            <span>{u.username || u.name}</span>
                             <Eye className="h-3 w-3 text-muted-foreground" />
                             {u.id === currentUserId && (
                               <span className="ml-1 text-[10px] text-indigo-600 font-normal">
@@ -429,7 +460,6 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                               </span>
                             )}
                           </button>
-                          <p className="text-[11px] font-mono text-muted-foreground">{u.email}</p>
                         </div>
                       </div>
                       <Badge
@@ -446,16 +476,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
 
                     <div className="flex items-center justify-between text-xs pt-1 border-t border-border/60">
                       <span className="text-muted-foreground">Peran Akses:</span>
-                      <Badge
-                        variant="outline"
-                        className={
-                          u.role === "super_admin"
-                            ? "bg-indigo-50 text-indigo-800 text-[10px]"
-                            : "bg-slate-100 text-slate-700 text-[10px]"
-                        }
-                      >
-                        {u.role === "super_admin" ? "Super Admin" : "Admin Kasir"}
-                      </Badge>
+                      {getRoleBadge(u.role)}
                     </div>
 
                     <div className="flex items-center justify-end gap-1 pt-2 border-t border-border/60">
@@ -520,36 +541,24 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
               Tambah Akun Pengguna Baru
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Buat akun admin kasir atau super admin baru untuk operasional toko.
+              Buat akun pengguna baru dengan username, password, dan tentukan peran akses.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleCreateUser} className="space-y-3.5 pt-2">
             <div>
-              <label className="text-xs font-semibold text-foreground">Nama Lengkap</label>
+              <label className="text-xs font-semibold text-foreground">Username</label>
               <Input
-                placeholder="mis. Budi Wicaksono"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                placeholder="mis. budi_kasir atau stafgudang1"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
                 className="mt-1 text-xs"
                 required
               />
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-foreground">Alamat Email</label>
-              <Input
-                type="email"
-                placeholder="mis. budi@tokohp.com"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                className="mt-1 text-xs font-mono"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-foreground">Password Awal</label>
+              <label className="text-xs font-semibold text-foreground">Password</label>
               <Input
                 type="password"
                 placeholder="Minimal 6 karakter"
@@ -567,8 +576,10 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                 onChange={(e) => setNewRole(e.target.value as any)}
                 className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
-                <option value="admin">Admin (Kasir / Operasional Stok)</option>
-                <option value="super_admin">Super Admin (Owner / Akses Laba & User)</option>
+                <option value="owner">Owner (Akses Penuh Seluruh Sistem)</option>
+                <option value="admin_kasir">Staff Marketing (Dashboard, Transaksi Kasir POS, Riwayat Transaksi)</option>
+                <option value="staff_gudang">Staff Admin (Dashboard Gudang, Data Produk, Cetak Barcode, Riwayat Cetak Invoice)</option>
+                <option value="staff_keuangan">Staff Keuangan (Dashboard Finansial, Laporan Penjualan, Pengeluaran Harian, Laporan Keuangan)</option>
               </select>
             </div>
 
@@ -604,7 +615,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
               Ubah Role Pengguna
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Ubah wewenang akun <strong>{roleUser?.name}</strong> ({roleUser?.email}).
+              Ubah wewenang akun <strong>{roleUser?.username || roleUser?.name}</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -613,11 +624,13 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
               <label className="text-xs font-semibold text-foreground">Pilih Role Baru</label>
               <select
                 value={selectedRoleTarget}
-                onChange={(e) => setSelectedRoleTarget(e.target.value as any)}
+                onChange={(e) => setSelectedRoleTarget(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
-                <option value="admin">Admin (Kasir / Operasional Stok)</option>
-                <option value="super_admin">Super Admin (Owner / Akses Laba & User)</option>
+                <option value="owner">Owner (Akses Penuh Seluruh Sistem)</option>
+                <option value="admin_kasir">Staff Marketing (Dashboard, Transaksi Kasir POS, Riwayat Transaksi)</option>
+                <option value="staff_gudang">Staff Admin (Dashboard Gudang, Data Produk, Cetak Barcode, Riwayat Cetak Invoice)</option>
+                <option value="staff_keuangan">Staff Keuangan (Dashboard Finansial, Laporan Penjualan, Pengeluaran Harian, Laporan Keuangan)</option>
               </select>
             </div>
           </div>
@@ -652,7 +665,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
               Reset Password Pengguna
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Masukkan password baru untuk akun <strong>{passwordUser?.name}</strong>.
+              Masukkan password baru untuk akun <strong>{passwordUser?.username || passwordUser?.name}</strong>.
             </DialogDescription>
           </DialogHeader>
 
@@ -700,8 +713,8 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
             </DialogTitle>
             <DialogDescription className="text-xs">
               {toggleUser?.isActive
-                ? `Akun ${toggleUser?.name} (${toggleUser?.email}) tidak akan dapat masuk ke dalam dashboard toko.`
-                : `Akun ${toggleUser?.name} (${toggleUser?.email}) akan diaktifkan kembali dan dapat masuk ke dashboard.`}
+                ? `Akun ${toggleUser?.username || toggleUser?.name} tidak akan dapat masuk ke dalam dashboard toko.`
+                : `Akun ${toggleUser?.username || toggleUser?.name} akan diaktifkan kembali dan dapat masuk ke dashboard.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -749,11 +762,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white font-bold text-base shadow-sm">
-                  {detailUser?.name.charAt(0).toUpperCase()}
+                  {(detailUser?.username || detailUser?.name || "U").charAt(0).toUpperCase()}
                 </div>
                 <div>
                   <DialogTitle className="text-lg font-bold text-foreground flex items-center gap-2">
-                    <span>{detailUser?.name}</span>
+                    <span>{detailUser?.username || detailUser?.name}</span>
                     {detailUser?.id === currentUserId && (
                       <Badge variant="outline" className="text-[10px] text-indigo-600 border-indigo-200">
                         Anda
@@ -761,21 +774,12 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                     )}
                   </DialogTitle>
                   <DialogDescription className="text-xs font-mono text-muted-foreground">
-                    {detailUser?.email}
+                    {detailUser?.email && detailUser.email !== "-" ? detailUser.email : detailUser?.username}
                   </DialogDescription>
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1.5">
-                <Badge
-                  variant="outline"
-                  className={
-                    detailUser?.role === "super_admin"
-                      ? "border-indigo-300 bg-indigo-50 text-indigo-800 text-[11px] font-bold"
-                      : "border-slate-300 bg-slate-100 text-slate-700 text-[11px] font-medium"
-                  }
-                >
-                  {detailUser?.role === "super_admin" ? "Super Admin (Owner)" : "Admin Kasir"}
-                </Badge>
+                {getRoleBadge(detailUser?.role || "")}
                 <Badge
                   variant="secondary"
                   className={

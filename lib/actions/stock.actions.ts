@@ -9,6 +9,7 @@ import {
   StockAdjustmentSchema,
   StockAdjustmentFormValues,
 } from "@/lib/validations/stock.schema";
+import { createNotification } from "@/lib/actions/notification.actions";
 
 export interface StockMovementQuery {
   productId?: string;
@@ -20,48 +21,23 @@ export interface StockMovementQuery {
 /**
  * Mencatat stok masuk dari supplier (Penerimaan Barang)
  */
-export async function createStockIn(values: StockInFormValues) {
+export async function createStockIn(values: any) {
   const user = await requireAuth();
 
-  const validated = StockInSchema.safeParse(values);
-  if (!validated.success) {
-    return { error: validated.error.errors[0]?.message || "Data input stok masuk tidak valid" };
+  const { invoiceNo, items } = values || {};
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return { error: "Data input stok masuk tidak valid" };
   }
 
-  const { supplierId, invoiceNo, purchaseDate, items } = validated.data;
-
   try {
-    const result = await db.$transaction(async (tx) => {
-      // 1. Buat record Purchase
-      const purchase = await tx.purchase.create({
-        data: {
-          invoiceNo,
-          supplierId,
-          purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
-          createdById: user.id,
-        },
-      });
-
-      // 2. Simpan setiap item, tambahkan stok produk, dan catat riwayat movement in
+    await db.$transaction(async (tx) => {
       for (const item of items) {
-        const subtotal = item.qty * item.unitCost;
-
-        await tx.purchaseItem.create({
-          data: {
-            purchaseId: purchase.id,
-            productId: item.productId,
-            qty: item.qty,
-            unitCost: item.unitCost,
-            subtotal,
-          },
-        });
-
         // Update stok produk & perbarui harga modal ke harga beli terbaru
         await tx.product.update({
           where: { id: item.productId },
           data: {
             stock: { increment: item.qty },
-            purchasePrice: item.unitCost,
+            ...(item.unitCost ? { purchasePrice: item.unitCost } : {}),
           },
         });
 
@@ -71,21 +47,19 @@ export async function createStockIn(values: StockInFormValues) {
             productId: item.productId,
             type: "in",
             quantity: item.qty,
-            referenceType: "purchase",
-            referenceId: purchase.id,
-            note: `Penerimaan barang dari supplier (No. Faktur: ${invoiceNo})`,
+            referenceType: "manual",
+            note: `Penerimaan barang (Faktur: ${invoiceNo || "-"})`,
             createdById: user.id,
           },
         });
       }
-
-      return purchase;
     });
 
     revalidatePath("/stock");
     revalidatePath("/products");
     revalidatePath("/dashboard");
-    return { success: true, purchaseId: result.id };
+
+    return { success: true };
   } catch (error) {
     console.error("createStockIn error:", error);
     return { error: "Gagal memproses pencatatan stok masuk." };
@@ -223,10 +197,6 @@ export async function getProductStockCard(productId: string) {
 
   const product = await db.product.findUnique({
     where: { id: productId },
-    include: {
-      brand: { select: { name: true } },
-      category: { select: { name: true } },
-    },
   });
 
   if (!product) {
@@ -264,8 +234,8 @@ export async function getProductStockCard(productId: string) {
       name: product.name,
       sku: product.sku,
       variant: product.variant,
-      brandName: product.brandName || product.brand?.name || "-",
-      categoryName: product.categoryName || product.category?.name || "-",
+      brandName: product.brandName || "-",
+      categoryName: product.categoryName || "-",
       currentStock: product.stock,
       minStock: product.minStock,
     },
@@ -286,10 +256,6 @@ export async function getLowStockProducts() {
       stock: { lte: db.product.fields.minStock },
     },
     orderBy: { stock: "asc" },
-    include: {
-      brand: { select: { name: true } },
-      category: { select: { name: true } },
-    },
   });
 
   return products.map((p) => ({
@@ -297,8 +263,8 @@ export async function getLowStockProducts() {
     name: p.name,
     sku: p.sku,
     variant: p.variant,
-    brandName: p.brandName || p.brand?.name || "-",
-    categoryName: p.categoryName || p.category?.name || "-",
+    brandName: p.brandName || "-",
+    categoryName: p.categoryName || "-",
     stock: p.stock,
     minStock: p.minStock,
     sellingPrice: Number(p.sellingPrice),

@@ -86,7 +86,7 @@ export function AdminPerformanceSection({
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-primary" />
           <h2 className="text-sm font-semibold text-foreground">
-            Kinerja Admin Kasir
+            Kinerja Staff Marketing
           </h2>
           {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>

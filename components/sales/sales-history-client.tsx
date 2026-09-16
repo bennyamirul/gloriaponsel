@@ -58,6 +58,7 @@ export interface SaleRecord {
   subtotal: number;
   discount: number;
   additionalFee?: number;
+  additionalFeeNote?: string | null;
   total: number;
   paymentMethod: "cash" | "transfer" | "edc" | "qris";
   status: "completed" | "cancelled";
@@ -394,6 +395,11 @@ export function SalesHistoryClient({
                     <span className="font-bold text-foreground">
                       {selectedSale.customerName}
                     </span>
+                    {selectedSale.customerPhone && (
+                      <span className="text-[10px] text-muted-foreground block">
+                        {selectedSale.customerPhone}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-[10px]">
@@ -454,7 +460,7 @@ export function SalesHistoryClient({
                   )}
                   {selectedSale.additionalFee && selectedSale.additionalFee > 0 ? (
                     <div className="flex justify-between text-primary font-medium">
-                      <span>Biaya Tambahan</span>
+                      <span>Biaya Tambahan{selectedSale.additionalFeeNote ? ` (${selectedSale.additionalFeeNote})` : ""}</span>
                       <span>+{formatRupiah(selectedSale.additionalFee)}</span>
                     </div>
                   ) : null}

@@ -12,15 +12,16 @@ import {
 } from "@/lib/validations/user.schema";
 
 /**
- * Mengambil seluruh data user (Super Admin Only)
+ * Mengambil seluruh data user (Owner / Super Admin Only)
  */
 export async function getUsers() {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
 
   const users = await db.user.findMany({
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
+      username: true,
       name: true,
       email: true,
       role: true,
@@ -35,8 +36,9 @@ export async function getUsers() {
 
   return users.map((u) => ({
     id: u.id,
-    name: u.name,
-    email: u.email,
+    username: u.username || u.email?.split("@")[0] || u.name || "user",
+    name: u.name || u.username || "User",
+    email: u.email || "-",
     role: u.role,
     isActive: u.isActive,
     totalSalesCount: u._count.sales,
@@ -46,33 +48,40 @@ export async function getUsers() {
 }
 
 /**
- * Membuat user admin/kasir baru (Super Admin Only)
+ * Membuat user baru hanya dengan username, password, dan role (Owner Only)
  */
 export async function createUser(values: CreateUserFormValues) {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
 
   const validated = CreateUserSchema.safeParse(values);
   if (!validated.success) {
     return { error: validated.error.errors[0]?.message || "Input tidak valid" };
   }
 
-  const { name, email, password, role } = validated.data;
+  const { username, password, role } = validated.data;
+  const cleanUsername = username.toLowerCase().trim();
 
   try {
-    const existing = await db.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+    const existing = await db.user.findFirst({
+      where: {
+        OR: [
+          { username: cleanUsername },
+          { email: cleanUsername },
+        ],
+      },
     });
 
     if (existing) {
-      return { error: "Email sudah terdaftar untuk pengguna lain." };
+      return { error: "Username sudah digunakan oleh akun lain." };
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
 
     await db.user.create({
       data: {
-        name,
-        email: email.toLowerCase().trim(),
+        username: cleanUsername,
+        name: cleanUsername,
+        email: null,
         passwordHash,
         role,
         isActive: true,
@@ -88,10 +97,10 @@ export async function createUser(values: CreateUserFormValues) {
 }
 
 /**
- * Mengaktifkan atau menonaktifkan akun admin (Lockout Prevention)
+ * Mengaktifkan atau menonaktifkan akun user (Lockout Prevention)
  */
 export async function toggleUserStatus(userId: string) {
-  const currentUser = await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
 
   try {
     const targetUser = await db.user.findUnique({ where: { id: userId } });
@@ -99,15 +108,19 @@ export async function toggleUserStatus(userId: string) {
       return { error: "Pengguna tidak ditemukan." };
     }
 
-    // Proteksi: cegah menonaktifkan super admin terakhir
-    if (targetUser.role === "super_admin" && targetUser.isActive) {
-      const activeSuperAdminCount = await db.user.count({
-        where: { role: "super_admin", isActive: true },
+    // Proteksi: cegah menonaktifkan owner terakhir
+    const isTargetOwner = targetUser.role === "owner" || targetUser.role === "super_admin";
+    if (isTargetOwner && targetUser.isActive) {
+      const activeOwnerCount = await db.user.count({
+        where: {
+          role: { in: ["owner", "super_admin"] },
+          isActive: true,
+        },
       });
 
-      if (activeSuperAdminCount <= 1) {
+      if (activeOwnerCount <= 1) {
         return {
-          error: "Operasi ditolak: Anda tidak dapat menonaktifkan Super Admin terakhir di sistem.",
+          error: "Operasi ditolak: Anda tidak dapat menonaktifkan Owner terakhir di sistem.",
         };
       }
     }
@@ -126,10 +139,13 @@ export async function toggleUserStatus(userId: string) {
 }
 
 /**
- * Mengubah role pengguna (Admin <-> Super Admin) dengan proteksi lockout
+ * Mengubah role pengguna dengan proteksi lockout Owner
  */
-export async function updateUserRole(userId: string, newRole: "admin" | "super_admin") {
-  await requireRole(["super_admin"]);
+export async function updateUserRole(
+  userId: string,
+  newRole: "owner" | "admin_kasir" | "staff_gudang" | "super_admin" | "admin" | "staff_keuangan"
+) {
+  await requireRole(["owner", "super_admin"]);
 
   const validated = UpdateUserRoleSchema.safeParse({ userId, role: newRole });
   if (!validated.success) {
@@ -142,15 +158,21 @@ export async function updateUserRole(userId: string, newRole: "admin" | "super_a
       return { error: "Pengguna tidak ditemukan." };
     }
 
-    // Proteksi: jika user saat ini adalah super_admin dan diturunkan ke admin
-    if (targetUser.role === "super_admin" && newRole === "admin") {
-      const activeSuperAdminCount = await db.user.count({
-        where: { role: "super_admin", isActive: true },
+    const isCurrentOwner = targetUser.role === "owner" || targetUser.role === "super_admin";
+    const isNewRoleOwner = newRole === "owner" || newRole === "super_admin";
+
+    // Proteksi: jika user saat ini adalah owner dan diturunkan role-nya
+    if (isCurrentOwner && !isNewRoleOwner) {
+      const activeOwnerCount = await db.user.count({
+        where: {
+          role: { in: ["owner", "super_admin"] },
+          isActive: true,
+        },
       });
 
-      if (activeSuperAdminCount <= 1) {
+      if (activeOwnerCount <= 1) {
         return {
-          error: "Operasi ditolak: Anda tidak dapat menurunkan role Super Admin terakhir di sistem.",
+          error: "Operasi ditolak: Anda tidak dapat menurunkan role Owner terakhir di sistem.",
         };
       }
     }
@@ -169,10 +191,10 @@ export async function updateUserRole(userId: string, newRole: "admin" | "super_a
 }
 
 /**
- * Reset password akun user oleh Super Admin
+ * Reset password akun user oleh Owner
  */
 export async function resetUserPassword(userId: string, newPassword: string) {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
 
   const validated = ResetPasswordSchema.safeParse({ userId, newPassword });
   if (!validated.success) {
@@ -202,9 +224,10 @@ export async function resetUserPassword(userId: string, newPassword: string) {
 export interface UserDetailWithSales {
   user: {
     id: string;
+    username?: string | null;
     name: string;
     email: string;
-    role: "super_admin" | "admin";
+    role: string;
     isActive: boolean;
     createdAt: string;
     updatedAt: string;
@@ -233,12 +256,13 @@ export interface UserDetailWithSales {
  * Mengambil detail profil user serta riwayat transaksi (Hari Ini, Bulan Ini, Terakhir)
  */
 export async function getUserDetailWithSales(userId: string) {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
 
   const user = await db.user.findUnique({
     where: { id: userId },
     select: {
       id: true,
+      username: true,
       name: true,
       email: true,
       role: true,
@@ -285,7 +309,6 @@ export async function getUserDetailWithSales(userId: string) {
       take: 5,
       orderBy: { createdAt: "desc" },
       include: {
-        customer: { select: { name: true } },
         items: true,
       },
     }),
@@ -294,19 +317,24 @@ export async function getUserDetailWithSales(userId: string) {
   const recentSales = recentSalesRaw.map((s) => ({
     id: s.id,
     invoiceNo: s.invoiceNo,
-    customerName: s.customer?.name || "Pelanggan Umum",
+    customerName: s.customerName || "Pelanggan Umum",
     total: Number(s.total),
     paymentMethod: s.paymentMethod,
     status: s.status,
     createdAt: s.createdAt.toISOString(),
-    itemCount: s.items.reduce((acc, it) => acc + it.qty, 0),
+    itemCount: s.items.reduce((acc: number, it: any) => acc + it.qty, 0),
   }));
 
   return {
     success: true,
     data: {
       user: {
-        ...user,
+        id: user.id,
+        username: user.username,
+        name: user.name || user.username || "User",
+        email: user.email || "-",
+        role: user.role,
+        isActive: user.isActive,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
       },

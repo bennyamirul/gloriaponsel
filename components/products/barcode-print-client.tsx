@@ -13,11 +13,12 @@ import {
   Sliders,
   Download,
   Info,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { generateQrCodeSvg } from "@/lib/barcode";
+import { generateBarcodeSvg, generateQrCodeSvg } from "@/lib/barcode";
 import { formatRupiah } from "@/lib/utils";
 
 export interface StockItemForBarcode {
@@ -48,8 +49,56 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
   );
   const [filterType, setFilterType] = useState<"all" | "phone" | "accessory">("all");
   const [search, setSearch] = useState("");
-  const [labelSize, setLabelSize] = useState<"sheet" | "thermal">("sheet");
+  const [labelSize, setLabelSize] = useState<"thermal" | "sheet">("thermal");
+  const [sizePreset, setSizePreset] = useState<"50x30" | "40x30" | "40x20" | "30x20" | "custom">("50x30");
+  const [customWidth, setCustomWidth] = useState<number>(50);
+  const [customHeight, setCustomHeight] = useState<number>(30);
   const [resmiInterOverrides, setResmiInterOverrides] = useState<Record<string, "RESMI" | "INTER">>({});
+
+  const stickerWidth =
+    sizePreset === "custom"
+      ? Math.max(20, Number(customWidth) || 50)
+      : sizePreset === "40x30"
+      ? 40
+      : sizePreset === "40x20"
+      ? 40
+      : sizePreset === "30x20"
+      ? 30
+      : 50;
+
+  const stickerHeight =
+    sizePreset === "custom"
+      ? Math.max(15, Number(customHeight) || 30)
+      : sizePreset === "40x30"
+      ? 30
+      : sizePreset === "40x20"
+      ? 20
+      : sizePreset === "30x20"
+      ? 20
+      : 30;
+
+  // Responsive layout calculations to prevent clipping on small stickers
+  const isVerySmall = stickerWidth <= 32 || stickerHeight <= 21;
+  const isSmall = !isVerySmall && (stickerWidth <= 42 || stickerHeight <= 25);
+
+  const leftColWidth = Math.min(22, Math.max(10.5, Number((stickerWidth * (isVerySmall ? 0.35 : 0.38)).toFixed(1))));
+  const rightColWidth = Number((stickerWidth - leftColWidth).toFixed(1));
+
+  const horizPadding = isVerySmall ? "0.4mm" : isSmall ? "0.7mm" : "1mm";
+  const vertPaddingTop = isVerySmall ? "0.3mm" : isSmall ? "0.5mm" : "0.7mm";
+  const vertPaddingBottom = isVerySmall ? "0.3mm" : isSmall ? "0.5mm" : "0.7mm";
+
+  const brandMarginTop = isVerySmall ? "0.2mm" : isSmall ? "0.4mm" : "0.7mm";
+  const brandFontSize = isVerySmall ? "4.2px" : isSmall ? "5.5px" : "6.5px";
+  const brandLetterSpacing = isVerySmall ? "-0.2px" : "0.2px";
+
+  const reservedForBrand = isVerySmall ? 4.2 : isSmall ? 5.5 : 7;
+  const qrBoxSize = Math.max(7, Math.min(leftColWidth - 1.2, stickerHeight - reservedForBrand));
+
+  const titleFontSize = isVerySmall ? "6.5px" : isSmall ? "8px" : stickerHeight >= 35 ? "11px" : "9.5px";
+  const imeiFontSize = isVerySmall ? "5.8px" : isSmall ? "7px" : stickerHeight >= 35 ? "9.5px" : "8px";
+  const statusFontSize = isVerySmall ? "6px" : isSmall ? "7.5px" : stickerHeight >= 35 ? "10px" : "8.5px";
+  const halfHeight = (stickerHeight / 2 - 0.2).toFixed(1);
 
   const getResmiInterStatus = (item: StockItemForBarcode): "RESMI" | "INTER" => {
     if (resmiInterOverrides[item.id]) {
@@ -69,6 +118,26 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
         [id]: current === "RESMI" ? "INTER" : "RESMI",
       };
     });
+  };
+
+  // Helper untuk menyatukan Tipe HP, Kapasitas, dan Warna menjadi 1 baris
+  const getProductTitleCombined = (item: StockItemForBarcode) => {
+    const name = (item.name || "").trim();
+    const cap = (item.capacity || "").trim();
+    const color = (item.color || "").trim();
+
+    const details: string[] = [];
+    if (cap && !name.toLowerCase().includes(cap.toLowerCase())) {
+      details.push(cap);
+    }
+    if (color && !name.toLowerCase().includes(color.toLowerCase())) {
+      details.push(color);
+    }
+
+    if (details.length > 0) {
+      return `${name} ${details.join(" ")}`;
+    }
+    return name;
   };
 
   // Filter items
@@ -117,7 +186,7 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
     if (selectedList.length === 0) return;
 
     const isThermal = labelSize === "thermal";
-    const printWindow = window.open("", "_blank", "width=850,height=950");
+    const printWindow = window.open("", "_blank", "width=750,height=850");
     if (!printWindow) {
       window.print();
       return;
@@ -128,9 +197,7 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
         const barcodeValue = item.imei || item.sku;
         const qrSvg = generateQrCodeSvg(barcodeValue, { margin: 1 });
         const resmiInter = item.productType === "phone" ? getResmiInterStatus(item) : "ORIGINAL";
-        const capColor =
-          [item.capacity, item.color].filter(Boolean).join(" / ") ||
-          (item.productType === "accessory" ? "Aksesoris" : "-");
+        const fullTitle = getProductTitleCombined(item);
 
         return `
           <div class="sticker-card">
@@ -138,13 +205,17 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
               <div class="qr-box">
                 ${qrSvg}
               </div>
-              <div class="imei-text">${barcodeValue}</div>
+              <div class="brand-text">GLORIA PONSEL</div>
             </div>
             <div class="col-right">
-              <div class="row-1">GLORIA PONSEL</div>
-              <div class="row-2"><div class="row-2-text">${item.name}</div></div>
-              <div class="row-3">${capColor}</div>
-              <div class="row-4">${resmiInter}</div>
+              <div class="right-top">
+                <div class="product-title">${fullTitle}</div>
+              </div>
+              <div class="divider-h"></div>
+              <div class="right-bottom">
+                <div class="imei-text">IMEI: ${barcodeValue}</div>
+                <div class="status-text">${resmiInter}</div>
+              </div>
             </div>
           </div>
         `;
@@ -155,12 +226,12 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Cetak_Barcode_70x35mm</title>
+          <title>Cetak_Barcode_${stickerWidth}x${stickerHeight}mm</title>
           <meta charset="utf-8" />
           <style>
             @page {
-              size: ${isThermal ? "70mm 35mm" : "A4 portrait"};
-              margin: ${isThermal ? "0" : "8mm 6mm"};
+              size: ${isThermal ? `${stickerWidth}mm ${stickerHeight}mm` : "A4 portrait"};
+              margin: ${isThermal ? "0" : "6mm 5mm"};
             }
             * {
               box-sizing: border-box;
@@ -178,7 +249,7 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
               isThermal
                 ? `
               body {
-                width: 70mm;
+                width: ${stickerWidth}mm;
                 margin: 0;
                 padding: 0;
               }
@@ -188,10 +259,10 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
                 padding: 0;
               }
               .sticker-card {
-                width: 70mm;
-                height: 35mm;
-                max-width: 70mm;
-                max-height: 35mm;
+                width: ${stickerWidth}mm;
+                height: ${stickerHeight}mm;
+                max-width: ${stickerWidth}mm;
+                max-height: ${stickerHeight}mm;
                 border: 1px solid #000000;
                 display: flex;
                 flex-direction: row;
@@ -201,6 +272,7 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
                 break-inside: avoid;
                 overflow: hidden;
                 background: #ffffff;
+                box-sizing: border-box;
               }
             `
                 : `
@@ -211,13 +283,15 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
               .stickers-container {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 3mm;
+                gap: 2mm;
                 justify-content: flex-start;
                 padding: 0;
               }
               .sticker-card {
-                width: 70mm;
-                height: 35mm;
+                width: ${stickerWidth}mm;
+                height: ${stickerHeight}mm;
+                max-width: ${stickerWidth}mm;
+                max-height: ${stickerHeight}mm;
                 border: 1px solid #000000;
                 display: flex;
                 flex-direction: row;
@@ -225,111 +299,107 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
                 break-inside: avoid;
                 overflow: hidden;
                 background: #ffffff;
+                box-sizing: border-box;
               }
             `
             }
             .col-left {
-              width: 27mm;
-              height: 35mm;
+              width: ${leftColWidth}mm;
+              height: ${stickerHeight}mm;
               border-right: 1px solid #000000;
               display: flex;
               flex-direction: column;
               align-items: center;
               justify-content: center;
-              padding: 1mm;
-              flex-shrink: 0;
+              padding: 0.5mm;
               box-sizing: border-box;
+              flex-shrink: 0;
             }
             .qr-box {
-              width: 24mm;
-              height: 24mm;
+              width: ${qrBoxSize}mm;
+              height: ${qrBoxSize}mm;
               display: flex;
               align-items: center;
               justify-content: center;
             }
             .qr-box svg {
-              width: 24mm;
-              height: 24mm;
+              width: 100%;
+              height: 100%;
               display: block;
             }
-            .imei-text {
-              font-family: "Courier New", Courier, monospace;
-              font-size: 8px;
-              font-weight: 700;
+            .brand-text {
+              font-size: ${brandFontSize};
+              font-weight: 800;
+              text-transform: uppercase;
+              letter-spacing: ${brandLetterSpacing};
+              margin-top: ${brandMarginTop};
               text-align: center;
-              line-height: 1.1;
-              margin-top: 0.5mm;
-              width: 25mm;
-              word-break: break-all;
-              letter-spacing: -0.2px;
+              line-height: 1;
+              color: #000000;
+              white-space: nowrap;
             }
             .col-right {
-              width: 43mm;
-              height: 35mm;
+              width: ${rightColWidth}mm;
+              height: ${stickerHeight}mm;
               display: flex;
               flex-direction: column;
-              flex-grow: 1;
-              overflow: hidden;
               box-sizing: border-box;
-            }
-            .row-1 {
-              height: 8mm;
-              border-bottom: 1px solid #000000;
-              display: flex;
-              align-items: center;
-              padding: 0 2.5mm;
-              font-weight: 900;
-              font-size: 13.5px;
-              letter-spacing: 0.5px;
-              text-transform: uppercase;
-              white-space: nowrap;
-              overflow: hidden;
-              box-sizing: border-box;
-            }
-            .row-2 {
-              height: 11.5mm;
-              border-bottom: 1px solid #000000;
-              display: flex;
-              align-items: center;
-              justify-content: flex-start;
-              padding: 0 2.5mm;
-              box-sizing: border-box;
-              overflow: hidden;
-            }
-            .row-2-text {
-              font-weight: 800;
-              font-size: 12px;
-              line-height: 1.15;
               text-align: left;
-              width: 100%;
+              overflow: hidden;
+            }
+            .right-top {
+              height: ${halfHeight}mm;
+              display: flex;
+              align-items: flex-end;
+              padding: ${vertPaddingTop} ${horizPadding} ${vertPaddingBottom} ${horizPadding};
+              box-sizing: border-box;
+              overflow: hidden;
+            }
+            .product-title {
+              font-size: ${titleFontSize};
+              font-weight: 800;
+              line-height: 1.12;
+              color: #000000;
               display: -webkit-box;
               -webkit-line-clamp: 2;
               -webkit-box-orient: vertical;
               overflow: hidden;
+              word-break: break-word;
+              text-transform: uppercase;
             }
-            .row-3 {
-              height: 7.5mm;
-              border-bottom: 1px solid #000000;
+            .divider-h {
+              border-top: 1px solid #000000;
+              width: 100%;
+              margin: 0;
+            }
+            .right-bottom {
+              height: ${halfHeight}mm;
               display: flex;
-              align-items: center;
-              padding: 0 2.5mm;
-              font-weight: 700;
-              font-size: 10.5px;
+              flex-direction: column;
+              justify-content: flex-start;
+              padding: ${vertPaddingTop} ${horizPadding} ${vertPaddingBottom} ${horizPadding};
+              box-sizing: border-box;
+              gap: ${isVerySmall ? "0.1mm" : "0.3mm"};
+              overflow: hidden;
+            }
+            .imei-text {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              font-size: ${imeiFontSize};
+              font-weight: 800;
+              color: #000000;
+              line-height: 1.1;
               white-space: nowrap;
               overflow: hidden;
               text-overflow: ellipsis;
-              box-sizing: border-box;
+              letter-spacing: ${isVerySmall ? "-0.4px" : "-0.2px"};
             }
-            .row-4 {
-              height: 8mm;
-              display: flex;
-              align-items: center;
-              padding: 0 2.5mm;
+            .status-text {
+              font-size: ${statusFontSize};
               font-weight: 900;
-              font-size: 11px;
-              letter-spacing: 0.5px;
               text-transform: uppercase;
-              box-sizing: border-box;
+              letter-spacing: ${isVerySmall ? "0.2px" : "0.4px"};
+              color: #000000;
+              line-height: 1.1;
             }
           </style>
         </head>
@@ -355,8 +425,8 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
   return (
     <div className="space-y-6">
       {/* Header bar - Hidden on print */}
-      <div className="print:hidden flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-5">
-        <div className="flex items-center gap-3">
+      <div className="print:hidden flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 border-b border-border pb-5">
+        <div className="flex items-center gap-3 shrink-0">
           <Link href="/products">
             <Button variant="outline" size="icon" className="h-9 w-9 rounded-xl">
               <ArrowLeft className="h-4 w-4" />
@@ -365,43 +435,93 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
           <div>
             <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <Printer className="h-5 w-5 text-primary" />
-              <span>Cetak Barcode SKU</span>
+              <span>Cetak Barcode </span>
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Label size / layout selector */}
-          <div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border text-xs">
+        <div className="flex flex-wrap items-center justify-end gap-2.5 w-full xl:w-auto ml-auto">
+          {/* Label size dropdown selector */}
+          <div className="flex items-center gap-2 bg-muted/40 p-1.5 rounded-xl border border-border text-xs shrink-0">
+            <span className="text-[11px] font-semibold text-muted-foreground pl-1">Ukuran:</span>
+            <div className="relative">
+              <select
+                value={sizePreset}
+                onChange={(e) => setSizePreset(e.target.value as any)}
+                className="h-8 pl-2.5 pr-7 text-xs font-semibold rounded-lg bg-background border border-border text-foreground shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none cursor-pointer hover:border-primary/40 transition"
+              >
+                <option value="50x30">50 x 30 mm (Standar)</option>
+                <option value="40x30">40 x 30 mm</option>
+                <option value="40x20">40 x 20 mm</option>
+                <option value="30x20">30 x 20 mm</option>
+                <option value="custom">Kustom (L x T)</option>
+              </select>
+              <div className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground">
+                <ChevronDown className="h-3.5 w-3.5" />
+              </div>
+            </div>
+
+            {sizePreset === "custom" && (
+              <div className="flex items-center gap-1 pl-1.5 border-l border-border">
+                <input
+                  type="number"
+                  min={20}
+                  max={120}
+                  value={customWidth}
+                  onChange={(e) => setCustomWidth(Number(e.target.value) || 20)}
+                  placeholder="L"
+                  className="w-11 h-8 text-xs px-1 rounded-lg border border-border bg-background text-center font-mono font-bold focus:outline-none focus:ring-1 focus:ring-primary"
+                  title="Lebar (mm)"
+                />
+                <span className="text-muted-foreground text-xs font-semibold">x</span>
+                <input
+                  type="number"
+                  min={15}
+                  max={100}
+                  value={customHeight}
+                  onChange={(e) => setCustomHeight(Number(e.target.value) || 15)}
+                  placeholder="T"
+                  className="w-11 h-8 text-xs px-1 rounded-lg border border-border bg-background text-center font-mono font-bold focus:outline-none focus:ring-1 focus:ring-primary"
+                  title="Tinggi (mm)"
+                />
+                <span className="text-[10px] text-muted-foreground pr-0.5">mm</span>
+              </div>
+            )}
+          </div>
+
+          {/* Label layout selector (Thermal vs A4 Sheet) */}
+          <div className="flex items-center bg-muted/60 p-1 rounded-xl border border-border text-xs shrink-0">
             <button
-              onClick={() => setLabelSize("sheet")}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-                labelSize === "sheet"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground"
-              }`}
-            >
-              Banyak Label / Kertas (70x35mm)
-            </button>
-            <button
+              type="button"
               onClick={() => setLabelSize("thermal")}
               className={`px-3 py-1.5 rounded-lg font-semibold transition ${
                 labelSize === "thermal"
                   ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              1 Label per Kertas (Roll 70x35mm)
+              Roll Thermal
+            </button>
+            <button
+              type="button"
+              onClick={() => setLabelSize("sheet")}
+              className={`px-3 py-1.5 rounded-lg font-semibold transition ${
+                labelSize === "sheet"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Lembar A4
             </button>
           </div>
 
           <Button
             onClick={handlePrint}
             disabled={selectedList.length === 0}
-            className="bg-primary text-primary-foreground font-bold px-5 rounded-xl gap-2 shadow-md shadow-primary/20"
+            className="bg-primary text-primary-foreground font-bold px-4 sm:px-5 rounded-xl gap-2 shadow-md shadow-primary/20 shrink-0"
           >
             <Printer className="h-4 w-4" />
-            <span>Cetak {selectedList.length} Label</span>
+            <span>Cetak {selectedList.length} Label ({stickerWidth}x{stickerHeight}mm)</span>
           </Button>
         </div>
       </div>
@@ -576,9 +696,9 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
         <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
           <div className="flex items-center gap-1.5">
             <Info className="h-3.5 w-3.5 text-primary" />
-            <span>Pratinjau Label 70x35mm (Barcode 2D QR Code):</span>
+            <span>Pratinjau Label 50x30mm (Barcode 2D di Kiri 1/3):</span>
           </div>
-          <span>Format: 70x35mm • Barcode 2D + 4 Baris Rapat</span>
+          <span>Format: 50x30mm • Kiri: Barcode 2D QR Code • Kanan: Tipe & Varian + IMEI/Status</span>
         </div>
       </div>
 
@@ -596,77 +716,121 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
             className={
               labelSize === "thermal"
                 ? "flex flex-wrap gap-4 print:block print:m-0"
-                : "flex flex-wrap gap-3.5 print:flex print:flex-wrap print:gap-2.5"
+                : "flex flex-wrap gap-3.5 print:flex print:flex-wrap print:gap-2"
             }
           >
             {selectedList.map((item) => {
               const barcodeValue = item.imei || item.sku;
               const qrSvg = generateQrCodeSvg(barcodeValue, { margin: 1 });
               const resmiInter = item.productType === "phone" ? getResmiInterStatus(item) : "ORIGINAL";
+              const combinedTitle = getProductTitleCombined(item);
 
               return (
                 <div
                   key={item.id}
                   className={`label-sticker ${
                     labelSize === "thermal" ? "label-sticker-thermal" : "label-sticker-sheet"
-                  } bg-white text-black border border-black shadow-sm print:shadow-none flex flex-row items-center overflow-hidden`}
+                  } bg-white text-black border border-black shadow-xs print:shadow-none flex flex-row overflow-hidden text-left`}
                   style={{
-                    width: "70mm",
-                    height: "35mm",
+                    width: `${stickerWidth}mm`,
+                    height: `${stickerHeight}mm`,
                     boxSizing: "border-box",
                   }}
                 >
-                  {/* Left: Barcode 2D Besar (QR Code) */}
+                  {/* Kiri Barcode: Barcode 2D + Tulisan Kecil Gloria Ponsel */}
                   <div
-                    className="flex flex-col items-center justify-center shrink-0 border-r border-black p-1 box-border"
-                    style={{ width: "27mm", height: "35mm" }}
+                    className="flex flex-col items-center justify-center shrink-0 border-r border-black p-[0.5mm] box-border"
+                    style={{ width: `${leftColWidth}mm`, height: `${stickerHeight}mm` }}
                   >
                     <div
-                      className="w-[24mm] h-[24mm] flex items-center justify-center bg-white"
+                      style={{ width: `${qrBoxSize}mm`, height: `${qrBoxSize}mm` }}
+                      className="flex items-center justify-center bg-white"
                       dangerouslySetInnerHTML={{ __html: qrSvg }}
                     />
-                    <span className="text-[8px] font-mono font-bold tracking-tight text-black leading-tight mt-0.5 text-center w-[25mm] break-all">
-                      {barcodeValue}
+                    <span
+                      style={{
+                        fontSize: brandFontSize,
+                        marginTop: brandMarginTop,
+                        letterSpacing: brandLetterSpacing,
+                      }}
+                      className="font-extrabold text-black uppercase text-center leading-none whitespace-nowrap select-none"
+                    >
+                      GLORIA PONSEL
                     </span>
                   </div>
 
-                  {/* Right: 4 Baris (Gloria Ponsel, Tipe HP, Kapasitas & Warna, Resmi/Inter) dengan pembatas garis */}
+                  {/* Kanan Isi: Terbagi 2 rapat di garis tengah horisontal */}
                   <div
-                    className="flex flex-col h-[35mm] flex-1 overflow-hidden box-border text-left"
-                    style={{ width: "43mm" }}
+                    className="flex flex-col box-border text-left overflow-hidden flex-1"
+                    style={{ width: `${rightColWidth}mm`, height: `${stickerHeight}mm` }}
                   >
-                    {/* Baris 1: Gloria Ponsel */}
-                    <div className="h-[8mm] border-b border-black flex items-center px-2.5 box-border">
-                      <span className="font-black text-[13.5px] tracking-wide uppercase text-black font-sans whitespace-nowrap overflow-hidden">
-                        GLORIA PONSEL
-                      </span>
-                    </div>
-
-                    {/* Baris 2: Tipe HP / Nama HP */}
-                    <div className="h-[11.5mm] border-b border-black flex items-center justify-start px-2.5 box-border overflow-hidden text-left">
-                      <p className="font-extrabold text-[12px] text-black leading-tight line-clamp-2 w-full text-left">
-                        {item.name}
-                      </p>
-                    </div>
-
-                    {/* Baris 3: Kapasitas dan Warna */}
-                    <div className="h-[7.5mm] border-b border-black flex items-center px-2.5 box-border">
-                      <p className="font-bold text-[10.5px] text-zinc-900 leading-none truncate">
-                        {[item.capacity, item.color].filter(Boolean).join(" / ") ||
-                          (item.productType === "accessory" ? "Aksesoris" : "-")}
-                      </p>
-                    </div>
-
-                    {/* Baris 4: Resmi / Inter */}
-                    <div className="h-[8mm] flex items-center px-2.5 box-border">
-                      <button
-                        type="button"
-                        onClick={() => item.productType === "phone" && toggleResmiInter(item.id)}
-                        className="font-black text-[11px] text-black uppercase tracking-wider cursor-pointer hover:underline"
-                        title="Klik untuk ubah Resmi / Inter"
+                    {/* Atas (Tipe HP + Kapasitas + Warna): Menempel rapat ke garis tengah */}
+                    <div
+                      style={{
+                        height: `${halfHeight}mm`,
+                        padding: `${vertPaddingTop} ${horizPadding} ${vertPaddingBottom} ${horizPadding}`,
+                      }}
+                      className="flex items-end box-border overflow-hidden"
+                    >
+                      <p
+                        style={{ fontSize: titleFontSize }}
+                        className="font-extrabold text-black leading-[1.12] line-clamp-2 w-full text-left m-0 uppercase"
+                        title={combinedTitle}
                       >
-                        {resmiInter}
-                      </button>
+                        {combinedTitle}
+                      </p>
+                    </div>
+
+                    {/* Garis Pemisah Tengah Horisontal */}
+                    <div className="border-t border-black w-full" />
+
+                    {/* Bawah (IMEI & Status Garansi): Menempel rapat ke garis tengah */}
+                    <div
+                      style={{
+                        height: `${halfHeight}mm`,
+                        padding: `${vertPaddingTop} ${horizPadding} ${vertPaddingBottom} ${horizPadding}`,
+                        gap: isVerySmall ? "0.1mm" : "0.3mm",
+                      }}
+                      className="flex flex-col justify-start box-border overflow-hidden"
+                    >
+                      <span
+                        style={{
+                          fontSize: imeiFontSize,
+                          letterSpacing: isVerySmall ? "-0.4px" : "-0.2px",
+                        }}
+                        className="font-sans font-bold text-black leading-[1.1] truncate"
+                      >
+                        IMEI: {barcodeValue}
+                      </span>
+                      <div>
+                        {item.productType === "phone" ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleResmiInter(item.id);
+                            }}
+                            style={{
+                              fontSize: statusFontSize,
+                              letterSpacing: isVerySmall ? "0.2px" : "0.4px",
+                            }}
+                            className="font-black text-black uppercase cursor-pointer hover:underline leading-[1.1]"
+                            title="Klik untuk ubah Resmi / Inter"
+                          >
+                            {resmiInter}
+                          </button>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: statusFontSize,
+                              letterSpacing: isVerySmall ? "0.2px" : "0.4px",
+                            }}
+                            className="font-black text-black uppercase leading-[1.1]"
+                          >
+                            {resmiInter}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -680,8 +844,8 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
       <style jsx global>{`
         @media print {
           @page {
-            size: ${labelSize === "thermal" ? "70mm 35mm" : "A4 portrait"};
-            margin: ${labelSize === "thermal" ? "0" : "8mm 6mm"};
+            size: ${labelSize === "thermal" ? `${stickerWidth}mm ${stickerHeight}mm` : "A4 portrait"};
+            margin: ${labelSize === "thermal" ? "0" : "6mm 5mm"};
           }
           body * {
             visibility: hidden !important;
@@ -710,10 +874,10 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
             display: none !important;
           }
           .label-sticker-thermal {
-            width: 70mm !important;
-            height: 35mm !important;
-            max-width: 70mm !important;
-            max-height: 35mm !important;
+            width: ${stickerWidth}mm !important;
+            height: ${stickerHeight}mm !important;
+            max-width: ${stickerWidth}mm !important;
+            max-height: ${stickerHeight}mm !important;
             page-break-after: always !important;
             break-after: page !important;
             page-break-inside: avoid !important;
@@ -722,15 +886,19 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
             margin: 0 !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
+            display: flex !important;
+            flex-direction: row !important;
           }
           .label-sticker-sheet {
-            width: 70mm !important;
-            height: 35mm !important;
+            width: ${stickerWidth}mm !important;
+            height: ${stickerHeight}mm !important;
             page-break-inside: avoid !important;
             break-inside: avoid !important;
             border: 1px solid #000000 !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
+            display: flex !important;
+            flex-direction: row !important;
           }
         }
       `}</style>

@@ -292,6 +292,80 @@ export function BarcodeScannerModal({
   const [hasTorch, setHasTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [isSecureCtx, setIsSecureCtx] = useState(true);
+
+  // Deteksi perangkat mobile & konteks secure (HTTPS / localhost)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const mobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        ) || window.innerWidth < 768;
+      const secure =
+        window.isSecureContext ||
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1";
+
+      setIsMobileDevice(mobile);
+      setIsSecureCtx(secure);
+
+      // Jika di HP dan bukan HTTPS/localhost, browser mobile (Chrome/Safari) secara default
+      // menonaktifkan navigator.mediaDevices.getUserMedia (tidak akan memunculkan prompt izin).
+      // Arahkan otomatis ke Foto Kamera HP langsung agar pengguna tidak bingung!
+      if (open && mobile && !secure) {
+        setMode("upload");
+      }
+    }
+  }, [open]);
+
+  // Fungsi eksplisit untuk memicu dialog izin browser melalui event klik (User Gesture)
+  const requestCameraAccess = async () => {
+    setIsRequestingPermission(true);
+    setScannerError(null);
+    try {
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        if (!isSecureCtx) {
+          toast.info("Jaringan non-HTTPS di HP mengalihkan ke mode Foto Kamera HP.");
+          setMode("upload");
+          return;
+        }
+        throw new Error("Kamera tidak didukung pada browser ini.");
+      }
+
+      // Panggilan getUserMedia langsung di dalam handler klik pengguna
+      // Ini WAJIB untuk memicu pop-up 'Allow/Izinkan Kamera' di browser mobile
+      const testStream = await navigator.mediaDevices.getUserMedia({
+        video: selectedCameraId
+          ? { deviceId: { exact: selectedCameraId } }
+          : { facingMode: { ideal: facingMode } },
+      });
+
+      // Lepas stream sementara agar Html5Qrcode bisa membukanya secara eksklusif
+      testStream.getTracks().forEach((track) => track.stop());
+
+      // Mulai inisialisasi ulang scanner
+      setScannerError(null);
+      setRetryCount((prev) => prev + 1);
+    } catch (err: any) {
+      console.warn("Direct camera permission trigger failed:", err);
+      const raw = (err?.message || String(err)).toLowerCase();
+      if (
+        err?.name === "NotAllowedError" ||
+        raw.includes("denied") ||
+        raw.includes("permission")
+      ) {
+        setScannerError(
+          "Izin akses kamera ditolak. Silakan klik ikon gembok / perizinan situs di bilah alamat browser HP Anda untuk mengizinkan kamera."
+        );
+      } else {
+        setScannerError(err?.message || "Gagal mengaktifkan kamera.");
+      }
+    } finally {
+      setIsRequestingPermission(false);
+    }
+  };
 
   const handleToggleFacingMode = () => {
     const nextMode = facingMode === "environment" ? "user" : "environment";
@@ -642,7 +716,7 @@ export function BarcodeScannerModal({
           rawMsg.includes("permission denied")
         ) {
           msg =
-            "Izin akses kamera belum diberikan. Klik ikon gembok / izin situs di bilah alamat browser untuk mengizinkan kamera.";
+            "Izin kamera belum aktif. Tekan tombol 'Aktifkan Izin Kamera HP' di bawah untuk memunculkan pop-up izin browser HP Anda.";
         } else if (
           rawMsg.includes("notfounderror") ||
           rawMsg.includes("devicesnotfound")
@@ -835,24 +909,24 @@ export function BarcodeScannerModal({
                     <AlertCircle className="h-8 w-8 text-amber-500 mx-auto" />
                     <p className="text-foreground font-semibold max-w-sm mx-auto leading-relaxed">{scannerError}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      Pilihan solusi: Coba akses ulang webcam atau gunakan foto kamera HP langsung:
+                      Tekan tombol hijau di bawah untuk memunculkan izin browser HP atau gunakan Foto Kamera HP:
                     </p>
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
                       <Button
                         type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setScannerError(null);
-                          setRetryCount((c) => c + 1);
-                        }}
-                        className="gap-1.5 text-xs h-9 px-3 w-full sm:w-auto"
+                        onClick={requestCameraAccess}
+                        disabled={isRequestingPermission}
+                        className="gap-1.5 text-xs h-9 px-3 w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xs"
                       >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        <span>Coba Akses Lagi</span>
+                        {isRequestingPermission ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Camera className="h-3.5 w-3.5" />
+                        )}
+                        <span>Aktifkan Izin Kamera HP</span>
                       </Button>
                       <label className="w-full sm:w-auto inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground px-4 py-2 text-xs font-bold shadow-md hover:bg-primary/90 transition active:scale-95">
-                        <Camera className="h-4 w-4" />
+                        <Smartphone className="h-4 w-4" />
                         <span>{isScanningFile ? "Membaca Barcode..." : "Buka Kamera HP & Foto Barcode"}</span>
                         <input
                           type="file"
@@ -906,6 +980,25 @@ export function BarcodeScannerModal({
                     )}
                   </>
                 )}
+              </div>
+
+              {/* Pintasan cepat Kamera HP jika kamera live sulit fokus */}
+              <div className="flex items-center justify-between gap-2 p-2 bg-muted/40 rounded-xl border border-border text-xs">
+                <span className="text-[11px] text-muted-foreground truncate">
+                  Sulit fokus barcode kecil di layar live?
+                </span>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 px-2.5 py-1.5 text-xs font-semibold shrink-0 transition active:scale-95">
+                  <Smartphone className="h-3.5 w-3.5" />
+                  <span>{isScanningFile ? "Membaca..." : "Buka Kamera HP"}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                    disabled={isScanningFile}
+                  />
+                </label>
               </div>
 
               {/* Panduan Pemindaian */}

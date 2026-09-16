@@ -19,6 +19,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Table } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -58,19 +59,28 @@ interface SalesReportViewProps {
       invoiceNo: string;
       date: string;
       customerName: string;
+      customerPhone?: string;
       cashierName: string;
       paymentMethod: string;
       subtotal: number;
       discount: number;
+      additionalFee?: number;
+      additionalFeeNote?: string;
       total: number;
       itemsCount: number;
+      totalHpp: number;
+      sellingPrice: number;
+      commission: number;
+      profit: number;
       items: {
         id: string;
         name: string;
+        color?: string | null;
         variant: string | null;
         category?: string;
         brand?: string;
         qty: number;
+        unitCost?: number;
         unitPrice: number;
         subtotal: number;
       }[];
@@ -84,36 +94,50 @@ export function SalesReportView({ data }: SalesReportViewProps) {
 
   const { summary, categoryBreakdown, paymentBreakdown, sales } = data;
 
-  const filteredSales = sales.filter(
-    (s) =>
-      s.invoiceNo.toLowerCase().includes(search.toLowerCase()) ||
-      s.customerName.toLowerCase().includes(search.toLowerCase()) ||
-      s.cashierName.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredSales = sales.filter((s) => {
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      s.invoiceNo.toLowerCase().includes(q) ||
+      s.customerName.toLowerCase().includes(q) ||
+      (s.customerPhone && s.customerPhone.toLowerCase().includes(q)) ||
+      s.cashierName.toLowerCase().includes(q) ||
+      (s.additionalFeeNote && s.additionalFeeNote.toLowerCase().includes(q)) ||
+      s.items.some(
+        (it) =>
+          it.name.toLowerCase().includes(q) ||
+          (it.color && it.color.toLowerCase().includes(q))
+      )
+    );
+  });
 
   const handleExportExcel = () => {
     const headers = [
+      "Tanggal",
       "No Faktur",
-      "Tanggal Transaksi",
-      "Nama Pelanggan",
+      "Pelanggan",
+      "Produk",
+      "HPP (Rp)",
+      "Harga Jual (Rp)",
+      "Komisi (Rp)",
+      "Laba (Rp)",
       "Kasir",
-      "Jumlah Item",
-      "Subtotal (Rp)",
-      "Diskon (Rp)",
-      "Total Bersih (Rp)",
-      "Metode Pembayaran",
+      "Keterangan",
     ];
 
     const rows = filteredSales.map((s) => [
-      s.invoiceNo,
       new Date(s.date).toLocaleString("id-ID"),
-      s.customerName,
+      s.invoiceNo,
+      s.customerPhone ? `${s.customerName} (${s.customerPhone})` : s.customerName,
+      s.items
+        .map((it) => (it.color ? `${it.name} (${it.color})` : it.name))
+        .join(", "),
+      s.totalHpp,
+      s.sellingPrice,
+      s.commission,
+      s.profit,
       s.cashierName,
-      s.itemsCount,
-      s.subtotal,
-      s.discount,
-      s.total,
-      s.paymentMethod.toUpperCase(),
+      s.additionalFeeNote || "-",
     ]);
 
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -326,48 +350,104 @@ export function SalesReportView({ data }: SalesReportViewProps) {
             </div>
           ) : (
             <>
-              {/* Desktop Table View */}
-              <div className="hidden md:block overflow-x-auto mt-3">
-                <table className="w-full text-left text-xs">
+              {/* Desktop Table View (10 Kolom) */}
+              <div className="hidden lg:block mt-3">
+                <Table className="w-full text-left text-xs min-w-[950px]">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground font-semibold">
-                      <th className="pb-3">No. Faktur</th>
-                      <th className="pb-3">Waktu</th>
+                      <th className="pb-3 whitespace-nowrap">Tanggal</th>
+                      <th className="pb-3 whitespace-nowrap">No. Faktur</th>
                       <th className="pb-3">Pelanggan</th>
-                      <th className="pb-3">Kasir</th>
-                      <th className="pb-3">Metode</th>
-                      <th className="pb-3 text-center">Item</th>
-                      <th className="pb-3 text-right">Diskon</th>
-                      <th className="pb-3 text-right">Total</th>
+                      <th className="pb-3 min-w-[170px]">Produk</th>
+                      <th className="pb-3 text-right whitespace-nowrap">HPP</th>
+                      <th className="pb-3 text-right whitespace-nowrap">Harga Jual</th>
+                      <th className="pb-3 text-right whitespace-nowrap">Komisi</th>
+                      <th className="pb-3 text-right whitespace-nowrap">Laba</th>
+                      <th className="pb-3 whitespace-nowrap">Kasir</th>
+                      <th className="pb-3 min-w-[130px]">Keterangan</th>
                       <th className="pb-3 text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {filteredSales.map((sale) => (
                       <tr key={sale.id} className="hover:bg-muted/40 transition-colors">
-                        <td className="py-3 font-mono font-semibold text-foreground">
-                          {sale.invoiceNo}
-                        </td>
-                        <td className="py-3 text-muted-foreground">
+                        {/* 1. Tanggal */}
+                        <td className="py-3 text-muted-foreground whitespace-nowrap">
                           {new Date(sale.date).toLocaleString("id-ID", {
                             dateStyle: "short",
                             timeStyle: "short",
                           })}
                         </td>
-                        <td className="py-3 font-medium text-foreground">{sale.customerName}</td>
-                        <td className="py-3 text-muted-foreground">{sale.cashierName}</td>
+
+                        {/* 2. No Faktur */}
+                        <td className="py-3 font-mono font-semibold text-foreground whitespace-nowrap">
+                          {sale.invoiceNo}
+                        </td>
+
+                        {/* 3. Pelanggan (Nama dan No Telp) */}
                         <td className="py-3">
-                          <span className="px-2 py-0.5 rounded-md border border-border bg-slate-50 text-[10px] font-medium uppercase text-slate-700">
-                            {sale.paymentMethod}
-                          </span>
+                          <p className="font-semibold text-foreground leading-tight">
+                            {sale.customerName}
+                          </p>
+                          {sale.customerPhone ? (
+                            <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
+                              {sale.customerPhone}
+                            </p>
+                          ) : null}
                         </td>
-                        <td className="py-3 text-center font-medium">{sale.itemsCount}</td>
-                        <td className="py-3 text-right text-muted-foreground">
-                          {sale.discount > 0 ? formatRupiah(sale.discount) : "-"}
+
+                        {/* 4. Produk (Nama Produk dan Warna) */}
+                        <td className="py-3">
+                          <div className="space-y-1">
+                            {sale.items.map((it, idx) => (
+                              <div key={idx} className="leading-tight">
+                                <span className="font-semibold text-foreground">{it.name}</span>
+                                {it.color && (
+                                  <span className="text-muted-foreground font-normal ml-1">
+                                    ({it.color})
+                                  </span>
+                                )}
+                                {it.qty > 1 && (
+                                  <span className="text-[11px] text-muted-foreground font-medium ml-1">
+                                    x{it.qty}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </td>
-                        <td className="py-3 text-right font-bold text-foreground">
-                          {formatRupiah(sale.total)}
+
+                        {/* 5. HPP */}
+                        <td className="py-3 text-right font-mono text-muted-foreground whitespace-nowrap">
+                          {formatRupiah(sale.totalHpp)}
                         </td>
+
+                        {/* 6. Harga Jual */}
+                        <td className="py-3 text-right font-mono font-semibold text-foreground whitespace-nowrap">
+                          {formatRupiah(sale.sellingPrice)}
+                        </td>
+
+                        {/* 7. Komisi */}
+                        <td className="py-3 text-right font-mono text-muted-foreground whitespace-nowrap">
+                          {sale.commission > 0 ? formatRupiah(sale.commission) : "-"}
+                        </td>
+
+                        {/* 8. Laba */}
+                        <td className="py-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          {formatRupiah(sale.profit)}
+                        </td>
+
+                        {/* 9. Kasir */}
+                        <td className="py-3 text-muted-foreground whitespace-nowrap">
+                          {sale.cashierName}
+                        </td>
+
+                        {/* 10. Keterangan */}
+                        <td className="py-3 text-muted-foreground max-w-[160px] truncate" title={sale.additionalFeeNote || "-"}>
+                          {sale.additionalFeeNote || "-"}
+                        </td>
+
+                        {/* Aksi */}
                         <td className="py-3 text-center">
                           <Button
                             variant="ghost"
@@ -382,38 +462,113 @@ export function SalesReportView({ data }: SalesReportViewProps) {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </Table>
               </div>
 
-              {/* Mobile Card List View */}
-              <div className="grid grid-cols-1 gap-3 md:hidden mt-3">
+              {/* Mobile Card List View (Clean & Anti-Collision) */}
+              <div className="grid grid-cols-1 gap-3 lg:hidden mt-3">
                 {filteredSales.map((sale) => (
                   <div
                     key={sale.id}
                     onClick={() => setSelectedSale(sale)}
-                    className="p-3.5 rounded-xl border border-border bg-card space-y-2 cursor-pointer hover:border-slate-300 transition"
+                    className="p-3.5 rounded-2xl border border-border bg-card shadow-xs space-y-3 cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 transition"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-foreground">
+                    {/* Header Faktur & Waktu */}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-bold text-primary truncate">
                         {sale.invoiceNo}
                       </span>
-                      <span className="px-2 py-0.5 rounded-md border border-border bg-slate-50 text-[10px] font-medium uppercase text-slate-700">
-                        {sale.paymentMethod}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{sale.customerName}</span>
-                      <span>
-                        {new Date(sale.date).toLocaleDateString("id-ID", {
-                          day: "numeric",
-                          month: "short",
+                      <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                        {new Date(sale.date).toLocaleString("id-ID", {
+                          dateStyle: "short",
+                          timeStyle: "short",
                         })}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between pt-1 border-t border-border text-xs">
-                      <span className="text-muted-foreground">{sale.itemsCount} unit barang</span>
-                      <span className="font-bold text-foreground">{formatRupiah(sale.total)}</span>
+
+                    {/* Pelanggan & Kasir */}
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="min-w-0 truncate">
+                        <span className="font-semibold text-foreground">{sale.customerName}</span>
+                        {sale.customerPhone && (
+                          <span className="ml-1 text-[11px] text-muted-foreground font-mono">
+                            ({sale.customerPhone})
+                          </span>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-muted-foreground text-[11px]">
+                        Kasir: <strong className="text-foreground font-medium">{sale.cashierName}</strong>
+                      </span>
                     </div>
+
+                    {/* Rincian Produk */}
+                    <div className="p-2.5 rounded-xl bg-muted/40 text-xs space-y-1.5 border border-border/50">
+                      <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
+                        PRODUK ({sale.items.reduce((acc, it) => acc + (it.qty || 1), 0)} unit):
+                      </p>
+                      <div className="space-y-1">
+                        {sale.items.map((it, idx) => (
+                          <div key={idx} className="flex justify-between items-center gap-2 text-xs font-medium text-foreground">
+                            <span className="truncate">
+                              {it.name} {it.color ? <span className="text-muted-foreground font-normal">({it.color})</span> : ""}
+                            </span>
+                            <span className="shrink-0 text-muted-foreground text-[11px] font-mono">
+                              {it.qty}x @ {formatRupiah(it.unitPrice)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Kotak Keuangan Terdedikasi (Anti-Tertimpa) */}
+                    <div className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-900/50 border border-border/80 space-y-2 text-xs">
+                      {/* Baris 1: HPP (Modal) & Harga Jual */}
+                      <div className="grid grid-cols-2 gap-3 pb-2 border-b border-border/60">
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider block font-semibold mb-0.5">
+                            HPP (Modal)
+                          </span>
+                          <span className="font-mono font-medium text-muted-foreground text-xs truncate block">
+                            {formatRupiah(sale.totalHpp)}
+                          </span>
+                        </div>
+                        <div className="text-right min-w-0">
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider block font-semibold mb-0.5">
+                            Harga Jual
+                          </span>
+                          <span className="font-mono font-bold text-foreground text-xs truncate block">
+                            {formatRupiah(sale.sellingPrice)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Baris 2: Komisi & Laba Bersih */}
+                      <div className="grid grid-cols-2 gap-3 items-center">
+                        <div className="min-w-0">
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider block font-semibold mb-0.5">
+                            Komisi
+                          </span>
+                          <span className="font-mono font-semibold text-amber-700 dark:text-amber-400 text-xs truncate block">
+                            {sale.commission > 0 ? formatRupiah(sale.commission) : "Rp 0"}
+                          </span>
+                        </div>
+                        <div className="text-right min-w-0">
+                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block font-bold mb-0.5">
+                            Laba Bersih
+                          </span>
+                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400 text-sm truncate block">
+                            {formatRupiah(sale.profit)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Keterangan */}
+                    {sale.additionalFeeNote && (
+                      <p className="text-[11px] text-muted-foreground pt-1 border-t border-dashed border-border/70 truncate">
+                        <span className="font-medium text-foreground">Ket:</span> {sale.additionalFeeNote}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -441,12 +596,25 @@ export function SalesReportView({ data }: SalesReportViewProps) {
               <div className="rounded-xl border border-border bg-muted/30 p-3 space-y-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Pelanggan</span>
-                  <span className="font-semibold">{selectedSale.customerName}</span>
+                  <span className="font-semibold text-right">
+                    {selectedSale.customerName}
+                    {selectedSale.customerPhone && (
+                      <span className="block text-[11px] text-muted-foreground font-mono font-normal">
+                        {selectedSale.customerPhone}
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Metode Pembayaran</span>
                   <span className="font-semibold uppercase">{selectedSale.paymentMethod}</span>
                 </div>
+                {selectedSale.additionalFeeNote && (
+                  <div className="flex justify-between text-xs pt-1 border-t border-border/50">
+                    <span className="text-muted-foreground">Keterangan</span>
+                    <span className="font-medium text-foreground text-right">{selectedSale.additionalFeeNote}</span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -458,7 +626,9 @@ export function SalesReportView({ data }: SalesReportViewProps) {
                       className="flex items-center justify-between p-2 rounded-lg bg-card border border-border text-xs"
                     >
                       <div>
-                        <p className="font-medium text-foreground">{it.name}</p>
+                        <p className="font-medium text-foreground">
+                          {it.name} {it.color ? <span className="text-muted-foreground">({it.color})</span> : ""}
+                        </p>
                         <p className="text-[10px] text-muted-foreground">
                           {it.qty} x {formatRupiah(it.unitPrice)}
                         </p>
@@ -471,19 +641,39 @@ export function SalesReportView({ data }: SalesReportViewProps) {
                 </div>
               </div>
 
-              <div className="border-t border-border pt-3 space-y-1 text-xs">
+              <div className="border-t border-border pt-3 space-y-1 text-xs font-mono">
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal</span>
+                  <span>Subtotal:</span>
                   <span>{formatRupiah(selectedSale.subtotal)}</span>
                 </div>
                 {selectedSale.discount > 0 && (
                   <div className="flex justify-between text-rose-600">
-                    <span>Diskon</span>
+                    <span>Diskon:</span>
                     <span>-{formatRupiah(selectedSale.discount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-sm text-foreground pt-1 border-t border-border">
-                  <span>Total Pembayaran</span>
+                {selectedSale.additionalFee > 0 && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Biaya Tambahan:</span>
+                    <span>+{formatRupiah(selectedSale.additionalFee)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-muted-foreground">
+                  <span>HPP (Modal):</span>
+                  <span>{formatRupiah(selectedSale.totalHpp)}</span>
+                </div>
+                {selectedSale.commission > 0 && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Komisi:</span>
+                    <span>{formatRupiah(selectedSale.commission)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-emerald-600 dark:text-emerald-400 pt-1 border-t border-border">
+                  <span>Laba Bersih:</span>
+                  <span>{formatRupiah(selectedSale.profit)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-sm text-foreground pt-1 border-t border-dashed border-border">
+                  <span>Total Faktur:</span>
                   <span>{formatRupiah(selectedSale.total)}</span>
                 </div>
               </div>

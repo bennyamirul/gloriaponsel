@@ -1,19 +1,23 @@
 import { z } from "zod";
 
 export const CreateUserSchema = z.object({
-  name: z.string().min(2, "Nama pengguna minimal 2 karakter"),
-  email: z.string().email("Format email tidak valid"),
+  username: z
+    .string()
+    .min(3, "Username minimal 3 karakter")
+    .regex(/^[a-zA-Z0-9._-]+$/, "Username hanya boleh berisi huruf, angka, titik, underscore, atau minus"),
   password: z.string().min(6, "Password minimal 6 karakter"),
-  role: z.enum(["admin", "super_admin"], {
-    errorMap: () => ({ message: "Role harus admin atau super_admin" }),
+  role: z.enum(["owner", "admin_kasir", "staff_gudang", "staff_keuangan"], {
+    errorMap: () => ({ message: "Role harus Owner, Staff Marketing, Staff Admin, atau Staff Keuangan" }),
   }),
 });
 
 export type CreateUserFormValues = z.infer<typeof CreateUserSchema>;
 
 export const UpdateUserRoleSchema = z.object({
-  userId: z.string().uuid("ID Pengguna tidak valid"),
-  role: z.enum(["admin", "super_admin"]),
+  userId: z.string().min(1, "ID Pengguna wajib diisi"),
+  role: z.enum(["owner", "admin_kasir", "staff_gudang", "super_admin", "admin", "staff_keuangan"], {
+    errorMap: () => ({ message: "Pilihan role tidak valid" }),
+  }),
 });
 
 export type UpdateUserRoleValues = z.infer<typeof UpdateUserRoleSchema>;
@@ -27,7 +31,12 @@ export type ResetPasswordValues = z.infer<typeof ResetPasswordSchema>;
 
 export const UpdateProfileSchema = z.object({
   name: z.string().min(2, "Nama minimal 2 karakter"),
-  email: z.string().email("Format email tidak valid"),
+  username: z
+    .string()
+    .min(3, "Username minimal 3 karakter")
+    .regex(/^[a-zA-Z0-9._-]+$/, "Username hanya boleh berisi huruf, angka, titik, underscore, atau minus")
+    .optional(),
+  email: z.string().email("Format email tidak valid").optional().or(z.literal("")),
 });
 
 export type UpdateProfileValues = z.infer<typeof UpdateProfileSchema>;

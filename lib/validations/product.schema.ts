@@ -18,6 +18,7 @@ export const ProductSchema = z
     color: z.string().max(50).optional().nullable(),
     completeness: z.string().max(100).optional().nullable(),
     retailSupplier: z.string().max(100).optional().nullable(),
+    grade: z.string().max(50).optional().nullable(),
     entryDate: z.string().optional().nullable(),
     brandName: z.string().max(100).optional().nullable(),
     categoryName: z.string().max(100).optional().nullable(),
@@ -32,10 +33,12 @@ export const ProductSchema = z
     variant: z.string().max(100).optional().nullable(),
     purchasePrice: z.coerce
       .number({ invalid_type_error: "Harga modal harus berupa angka" })
-      .min(0, "Harga modal tidak boleh negatif"),
+      .min(0, "Harga modal tidak boleh negatif")
+      .default(0),
     sellingPrice: z.coerce
       .number({ invalid_type_error: "Harga jual harus berupa angka" })
-      .min(100, "Harga jual minimal Rp 100"),
+      .min(0, "Harga jual tidak boleh negatif")
+      .default(0),
     stock: z.coerce
       .number({ invalid_type_error: "Stok harus berupa angka" })
       .int("Stok harus bilangan bulat")
@@ -48,7 +51,14 @@ export const ProductSchema = z
       .default(5),
     imageUrl: z.string().optional().nullable(),
     description: z.string().max(1000).optional().nullable(),
-    status: z.enum(["available", "retur", "sold"]).default("available").optional(),
+    status: z
+      .preprocess((val) => {
+        if (val === "sold") return "sold";
+        if (val === "menunggu_persetujuan") return "menunggu_persetujuan";
+        if (val === "ditolak") return "ditolak";
+        return "available";
+      }, z.enum(["available", "sold", "menunggu_persetujuan", "ditolak"]))
+      .default("available"),
     isActive: z.boolean().default(true),
   })
   .refine(
@@ -64,11 +74,41 @@ export const ProductSchema = z
     }
   )
   .refine(
-    (data) => data.sellingPrice >= data.purchasePrice,
+    (data) => {
+      if (data.status === "menunggu_persetujuan" || data.status === "ditolak") return true;
+      return data.sellingPrice >= data.purchasePrice;
+    },
     {
       message: "Harga jual tidak boleh lebih kecil dari harga modal",
+      path: ["sellingPrice"],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.status === "menunggu_persetujuan" || data.status === "ditolak") return true;
+      return data.sellingPrice >= 100;
+    },
+    {
+      message: "Harga jual minimal Rp 100",
       path: ["sellingPrice"],
     }
   );
 
 export type ProductFormValues = z.infer<typeof ProductSchema>;
+
+export const ApproveProductSchema = z
+  .object({
+    grade: z.string().min(1, "Grade produk wajib dipilih/diisi"),
+    purchasePrice: z.coerce
+      .number({ invalid_type_error: "HPP harus berupa angka" })
+      .min(0, "Harga modal (HPP) tidak boleh negatif"),
+    sellingPrice: z.coerce
+      .number({ invalid_type_error: "Harga jual harus berupa angka" })
+      .min(100, "Harga jual minimal Rp 100"),
+  })
+  .refine((data) => data.sellingPrice >= data.purchasePrice, {
+    message: "Harga jual tidak boleh lebih kecil dari harga modal (HPP)",
+    path: ["sellingPrice"],
+  });
+
+export type ApproveProductValues = z.infer<typeof ApproveProductSchema>;

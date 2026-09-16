@@ -16,7 +16,22 @@ export interface ActionResult {
 /**
  * Server Action untuk proses autentikasi login
  */
-export async function loginAction(values: LoginFormValues): Promise<ActionResult> {
+export async function loginAction(
+  valuesOrFormData: LoginFormValues | FormData
+): Promise<ActionResult> {
+  let values: LoginFormValues;
+  let callbackUrl = "/dashboard";
+
+  if (valuesOrFormData instanceof FormData) {
+    values = {
+      username: (valuesOrFormData.get("username") as string) || "",
+      password: (valuesOrFormData.get("password") as string) || "",
+    };
+    callbackUrl = (valuesOrFormData.get("callbackUrl") as string) || "/dashboard";
+  } else {
+    values = valuesOrFormData;
+  }
+
   const validated = LoginSchema.safeParse(values);
   if (!validated.success) {
     return {
@@ -24,38 +39,52 @@ export async function loginAction(values: LoginFormValues): Promise<ActionResult
     };
   }
 
-  const { email, password } = validated.data;
+  const { username, password } = validated.data;
+  const identifier = username.toLowerCase().trim();
 
   try {
-    const user = await db.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+    const user = await db.user.findFirst({
+      where: {
+        OR: [
+          { username: identifier },
+          { email: identifier },
+        ],
+      },
     });
 
     if (!user) {
-      return { error: "Email atau kata sandi salah." };
+      return { error: "Username atau kata sandi salah." };
     }
 
     if (!user.isActive) {
       return {
-        error: "Akun Anda dinonaktifkan. Silakan hubungi Super Admin toko.",
+        error: "Akun Anda dinonaktifkan. Silakan hubungi Owner toko.",
       };
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
-      return { error: "Email atau kata sandi salah." };
+      return { error: "Username atau kata sandi salah." };
     }
 
     // Set HTTP-only session cookie
     await createSession({
       id: user.id,
+      username: user.username,
       name: user.name,
       email: user.email,
       role: user.role,
     });
 
+    if (valuesOrFormData instanceof FormData) {
+      redirect(callbackUrl);
+    }
+
     return { success: true };
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.message === "NEXT_REDIRECT" || err?.digest?.startsWith("NEXT_REDIRECT")) {
+      throw err;
+    }
     console.error("Login error:", err);
     return {
       error: "Terjadi kesalahan koneksi sistem. Pastikan database aktif.",

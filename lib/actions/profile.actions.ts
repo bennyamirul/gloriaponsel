@@ -13,9 +13,10 @@ import {
 
 export interface ProfileData {
   id: string;
+  username?: string | null;
   name: string;
   email: string;
-  role: "super_admin" | "admin";
+  role: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -44,9 +45,8 @@ export async function getProfileData(): Promise<ProfileData | null> {
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
 
-  let salesStats: ProfileData["salesStats"] = undefined;
-
-  if (user.role === "admin") {
+  let salesStats = undefined;
+  if (user.role === "admin" || user.role === "admin_kasir") {
     const [todaySales, monthSales, allTimeCount] = await Promise.all([
       db.sale.findMany({
         where: {
@@ -83,8 +83,9 @@ export async function getProfileData(): Promise<ProfileData | null> {
 
   return {
     id: user.id,
-    name: user.name,
-    email: user.email,
+    username: user.username,
+    name: user.name || user.username || "Pengguna",
+    email: user.email || "",
     role: user.role,
     isActive: user.isActive,
     createdAt: user.createdAt.toISOString(),
@@ -96,7 +97,7 @@ export async function getProfileData(): Promise<ProfileData | null> {
 /**
  * Memperbarui nama dan email profil user yang sedang login
  */
-export async function updateProfile(values: UpdateProfileValues) {
+export async function updateProfile(values: { name: string; username?: string }) {
   const sessionUser = await requireAuth();
 
   const validated = UpdateProfileSchema.safeParse(values);
@@ -104,18 +105,21 @@ export async function updateProfile(values: UpdateProfileValues) {
     return { error: validated.error.errors[0]?.message || "Data profil tidak valid." };
   }
 
-  const { name, email } = validated.data;
-  const formattedEmail = email.toLowerCase().trim();
+  const { name, username } = validated.data;
 
   try {
-    // Cek email jika diubah apakah sudah dipakai user lain
-    if (formattedEmail !== sessionUser.email.toLowerCase()) {
-      const existing = await db.user.findUnique({
-        where: { email: formattedEmail },
+    // Jika username diubah, validasi keunikan username
+    if (username && username.trim().toLowerCase() !== (sessionUser.username || "").toLowerCase()) {
+      const existing = await db.user.findFirst({
+        where: {
+          username: username.trim(),
+          id: { not: sessionUser.id },
+        },
       });
-
-      if (existing && existing.id !== sessionUser.id) {
-        return { error: "Alamat email sudah digunakan oleh pengguna lain." };
+      if (existing) {
+        return {
+          error: `Username "${username.trim()}" sudah digunakan oleh akun lain. Silakan pilih username lain.`,
+        };
       }
     }
 
@@ -123,13 +127,14 @@ export async function updateProfile(values: UpdateProfileValues) {
       where: { id: sessionUser.id },
       data: {
         name: name.trim(),
-        email: formattedEmail,
+        ...(username ? { username: username.trim() } : {}),
       },
     });
 
-    // Update sesi cookie langsung agar nama baru aktif tanpa harus re-login
+    // Update sesi cookie langsung agar nama & username baru aktif tanpa harus re-login
     await createSession({
       id: updatedUser.id,
+      username: updatedUser.username,
       name: updatedUser.name,
       email: updatedUser.email,
       role: updatedUser.role,
@@ -144,8 +149,9 @@ export async function updateProfile(values: UpdateProfileValues) {
       message: "Profil Anda berhasil diperbarui.",
       user: {
         id: updatedUser.id,
-        name: updatedUser.name,
-        email: updatedUser.email,
+        username: updatedUser.username,
+        name: updatedUser.name || updatedUser.username || "Pengguna",
+        email: updatedUser.email || "",
       },
     };
   } catch (error: any) {

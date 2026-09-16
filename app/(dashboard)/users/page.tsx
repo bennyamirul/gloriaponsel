@@ -5,7 +5,7 @@ import { UsersClient } from "@/components/users/users-client";
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
   const currentUser = await getCurrentUser();
   const users = await getUsers();
 
@@ -13,10 +13,10 @@ export default async function UsersPage() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-foreground">
-          Manajemen User & Staf Kasir
+          Manajemen User & Hak Akses
         </h2>
         <p className="text-sm text-muted-foreground">
-          Khusus Super Admin: kelola akun, atur hak akses (Super Admin vs Admin Kasir), reset password, dan status aktif.
+          Khusus Owner: kelola akun, atur hak akses (Owner, Admin Kasir, Staff Gudang), reset password, dan status aktif.
         </p>
       </div>
 

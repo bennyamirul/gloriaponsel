@@ -91,3 +91,71 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+.only-print {
+  display: none !important;
+}
+
+@media print {
+  aside,
+  nav,
+  header,
+  [role="navigation"],
+  .no-print,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  .only-print {
+    display: block !important;
+  }
+
+  body,
+  html {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .md\:pl-64,
+  .md\:pl-20 {
+    padding-left: 0 !important;
+  }
+
+  main {
+    padding: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    margin: 8mm 10mm;
+  }
+}
+
+/* Styling scrollbar horizontal atas tabel */
+.table-scrollbar-top {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) hsl(var(--muted) / 0.4);
+}
+.table-scrollbar-top::-webkit-scrollbar {
+  height: 9px;
+}
+.table-scrollbar-top::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 4px;
+}
+.table-scrollbar-top::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.35);
+  border-radius: 4px;
+}
+.table-scrollbar-top::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.55);
+}
+

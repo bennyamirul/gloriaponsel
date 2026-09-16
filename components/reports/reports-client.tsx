@@ -2,52 +2,50 @@
 
 import { useState, useTransition } from "react";
 import {
-  BarChart3,
-  Boxes,
   TrendingUp,
-  Flame,
+  Receipt,
   Calendar,
   RefreshCw,
   CalendarDays,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  getSalesReport,
-  getStockReport,
   getProfitReport,
-  getBestSellersReport,
+  getDailyExpenses,
+  getMonthlyFinancialReport,
 } from "@/lib/actions/report.actions";
-import { SalesReportView } from "./sales-report-view";
-import { StockReportView } from "./stock-report-view";
 import { ProfitReportView } from "./profit-report-view";
-import { BestSellerReportView } from "./bestseller-report-view";
+import { DailyExpenseView } from "./daily-expense-view";
+import { FinancialReportView } from "./financial-report-view";
 
 interface ReportsClientProps {
   userRole: string;
-  categories: { id: string; name: string }[];
-  brands: { id: string; name: string }[];
-  initialSalesReport: any;
-  initialStockReport: any;
-  initialProfitReport?: any;
-  initialBestSellers: any;
+  initialProfitReport: any;
+  initialDailyExpenses: any;
+  initialMonthlyFinancialReport: any;
+  initialMonth: number;
+  initialYear: number;
 }
 
 export function ReportsClient({
   userRole,
-  categories,
-  brands,
-  initialSalesReport,
-  initialStockReport,
   initialProfitReport,
-  initialBestSellers,
+  initialDailyExpenses,
+  initialMonthlyFinancialReport,
+  initialMonth,
+  initialYear,
 }: ReportsClientProps) {
-  const isSuperAdmin = userRole === "super_admin";
+  const isSuperAdmin = userRole === "super_admin" || userRole === "owner";
 
-  const [activeTab, setActiveTab] = useState<"sales" | "stock" | "profit" | "bestseller">("sales");
+  // Active Tab: 1 = Laporan Penjualan (Laba Rugi), 2 = Pengeluaran Harian, 3 = Laporan Keuangan
+  const [activeTab, setActiveTab] = useState<"sales" | "daily-expenses" | "financial">(
+    "sales"
+  );
 
-  // Date Range State
+  // Date Range State for Tab 1 & Tab 2
   const now = new Date();
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
     .toISOString()
@@ -56,19 +54,18 @@ export function ReportsClient({
 
   const [startDate, setStartDate] = useState(firstDayOfMonth);
   const [endDate, setEndDate] = useState(todayStr);
-  const [datePreset, setDatePreset] = useState<"today" | "7days" | "30days" | "this_month" | "custom">(
-    "this_month"
-  );
+  const [datePreset, setDatePreset] = useState<
+    "today" | "7days" | "30days" | "this_month" | "custom"
+  >("this_month");
+
+  // Month & Year State for Tab 3
+  const [selectedMonth, setSelectedMonth] = useState(initialMonth);
+  const [selectedYear, setSelectedYear] = useState(initialYear);
 
   // Data states
-  const [salesData, setSalesData] = useState(initialSalesReport);
-  const [stockData, setStockData] = useState(initialStockReport);
-  const [profitData, setProfitData] = useState(initialProfitReport || null);
-  const [bestSellersData, setBestSellersData] = useState(initialBestSellers);
-
-  // Best seller options
-  const [bestSellerSort, setBestSellerSort] = useState<"qty" | "revenue">("qty");
-  const [bestSellerLimit, setBestSellerLimit] = useState(10);
+  const [profitData, setProfitData] = useState(initialProfitReport);
+  const [dailyExpensesData, setDailyExpensesData] = useState(initialDailyExpenses);
+  const [financialData, setFinancialData] = useState(initialMonthlyFinancialReport);
 
   const [isPending, startTransition] = useTransition();
 
@@ -94,27 +91,19 @@ export function ReportsClient({
     setStartDate(start);
     setEndDate(end);
 
-    loadReportsForDates(start, end);
+    loadDateFilteredReports(start, end);
   };
 
-  // Fetch reports when dates are applied
-  const loadReportsForDates = (start: string, end: string) => {
+  // Fetch reports when dates change for Tab 1 and Tab 2
+  const loadDateFilteredReports = (start: string, end: string) => {
     startTransition(async () => {
       try {
         if (activeTab === "sales") {
-          const res = await getSalesReport({ startDate: start, endDate: end });
-          setSalesData(res);
-        } else if (activeTab === "profit" && isSuperAdmin) {
           const res = await getProfitReport({ startDate: start, endDate: end });
           setProfitData(res);
-        } else if (activeTab === "bestseller") {
-          const res = await getBestSellersReport({
-            startDate: start,
-            endDate: end,
-            sortBy: bestSellerSort,
-            limit: bestSellerLimit,
-          });
-          setBestSellersData(res);
+        } else if (activeTab === "daily-expenses") {
+          const res = await getDailyExpenses({ startDate: start, endDate: end });
+          setDailyExpensesData(res);
         }
       } catch (err: any) {
         toast.error(err.message || "Gagal memuat data laporan.");
@@ -122,110 +111,103 @@ export function ReportsClient({
     });
   };
 
-  // Stock filter change
-  const handleStockFilterChange = (filters: {
-    categoryId?: string;
-    brandId?: string;
-    stockStatus?: any;
-  }) => {
+  // Fetch financial report when month/year changes for Tab 3
+  const handleMonthYearChange = (month: number, year: number) => {
+    setSelectedMonth(month);
+    setSelectedYear(year);
+
     startTransition(async () => {
       try {
-        const res = await getStockReport(filters);
-        setStockData(res);
+        const res = await getMonthlyFinancialReport(month, year);
+        setFinancialData(res);
       } catch (err: any) {
-        toast.error("Gagal memfilter laporan stok.");
+        toast.error(err.message || "Gagal memuat laporan keuangan bulanan.");
       }
     });
   };
 
-  // Best sellers filter change
-  const handleBestSellerFilterChange = (sortBy: "qty" | "revenue", limit: number) => {
-    setBestSellerSort(sortBy);
-    setBestSellerLimit(limit);
+  // Refresh current active tab
+  const handleRefresh = () => {
     startTransition(async () => {
       try {
-        const res = await getBestSellersReport({
-          startDate,
-          endDate,
-          sortBy,
-          limit,
-        });
-        setBestSellersData(res);
+        if (activeTab === "sales") {
+          const res = await getProfitReport({ startDate, endDate });
+          setProfitData(res);
+        } else if (activeTab === "daily-expenses") {
+          const res = await getDailyExpenses({ startDate, endDate });
+          setDailyExpensesData(res);
+        } else if (activeTab === "financial") {
+          const res = await getMonthlyFinancialReport(selectedMonth, selectedYear);
+          setFinancialData(res);
+        }
       } catch (err: any) {
-        toast.error("Gagal memfilter best sellers.");
+        toast.error("Gagal menyinkronkan data terbaru.");
       }
     });
   };
 
   // Tab switch handler
-  const handleTabChange = (tab: "sales" | "stock" | "profit" | "bestseller") => {
+  const handleTabChange = (tab: "sales" | "daily-expenses" | "financial") => {
     setActiveTab(tab);
-    if (tab === "sales" && !salesData) {
-      loadReportsForDates(startDate, endDate);
-    } else if (tab === "profit" && isSuperAdmin && !profitData) {
-      loadReportsForDates(startDate, endDate);
-    } else if (tab === "bestseller" && !bestSellersData) {
-      loadReportsForDates(startDate, endDate);
+    if (tab === "sales" && !profitData) {
+      loadDateFilteredReports(startDate, endDate);
+    } else if (tab === "daily-expenses" && !dailyExpensesData) {
+      loadDateFilteredReports(startDate, endDate);
+    } else if (tab === "financial" && !financialData) {
+      handleMonthYearChange(selectedMonth, selectedYear);
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Tabs Bar */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-4">
+      {/* Top 3 Tabs Navigation Bar */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-4 no-print">
         <div className="flex flex-wrap items-center gap-2">
+          {/* Tab 1: Laporan Penjualan */}
           <Button
             variant={activeTab === "sales" ? "default" : "outline"}
             size="sm"
             onClick={() => handleTabChange("sales")}
             className="rounded-xl font-semibold text-xs"
           >
-            <BarChart3 className="mr-1.5 h-4 w-4" />
+            <TrendingUp className="mr-1.5 h-4 w-4" />
             Laporan Penjualan
           </Button>
 
+          {/* Tab 2: Pengeluaran Harian */}
           <Button
-            variant={activeTab === "stock" ? "default" : "outline"}
+            variant={activeTab === "daily-expenses" ? "default" : "outline"}
             size="sm"
-            onClick={() => handleTabChange("stock")}
+            onClick={() => handleTabChange("daily-expenses")}
             className="rounded-xl font-semibold text-xs"
           >
-            <Boxes className="mr-1.5 h-4 w-4" />
-            Laporan Stok & Valuasi
+            <Wallet className="mr-1.5 h-4 w-4" />
+            Pengeluaran Harian
           </Button>
 
-          {isSuperAdmin && (
-            <Button
-              variant={activeTab === "profit" ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleTabChange("profit")}
-              className="rounded-xl font-semibold text-xs relative"
-            >
-              <TrendingUp className="mr-1.5 h-4 w-4 text-emerald-600" />
-              Laba-Rugi (P&L)
-            </Button>
-          )}
-
+          {/* Tab 3: Laporan Keuangan */}
           <Button
-            variant={activeTab === "bestseller" ? "default" : "outline"}
+            variant={activeTab === "financial" ? "default" : "outline"}
             size="sm"
-            onClick={() => handleTabChange("bestseller")}
+            onClick={() => handleTabChange("financial")}
             className="rounded-xl font-semibold text-xs"
           >
-            <Flame className="mr-1.5 h-4 w-4 text-amber-500" />
-            Produk Terlaris
+            <Receipt className="mr-1.5 h-4 w-4" />
+            Laporan Keuangan
           </Button>
         </div>
 
-        {/* Global Date Filter for tabs that use date ranges */}
-        {activeTab !== "stock" && (
+        {/* Global Date Filter for Tab 1 & Tab 2 */}
+        {activeTab !== "financial" && (
           <div className="flex flex-wrap items-center gap-2">
             {/* Quick Presets */}
             <div className="flex rounded-xl bg-muted/60 p-1">
               <button
                 onClick={() => applyPreset("today")}
                 className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition ${
-                  datePreset === "today" ? "bg-white text-primary shadow-sm" : "text-muted-foreground"
+                  datePreset === "today"
+                    ? "bg-white text-primary shadow-xs"
+                    : "text-muted-foreground"
                 }`}
               >
                 Hari Ini
@@ -233,7 +215,9 @@ export function ReportsClient({
               <button
                 onClick={() => applyPreset("7days")}
                 className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition ${
-                  datePreset === "7days" ? "bg-white text-primary shadow-sm" : "text-muted-foreground"
+                  datePreset === "7days"
+                    ? "bg-white text-primary shadow-xs"
+                    : "text-muted-foreground"
                 }`}
               >
                 7 Hari
@@ -242,7 +226,7 @@ export function ReportsClient({
                 onClick={() => applyPreset("this_month")}
                 className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition ${
                   datePreset === "this_month"
-                    ? "bg-white text-primary shadow-sm"
+                    ? "bg-white text-primary shadow-xs"
                     : "text-muted-foreground"
                 }`}
               >
@@ -274,7 +258,7 @@ export function ReportsClient({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => loadReportsForDates(startDate, endDate)}
+                onClick={() => loadDateFilteredReports(startDate, endDate)}
                 disabled={isPending}
                 className="h-8 text-xs font-semibold px-2.5"
                 title="Terapkan Rentang Tanggal"
@@ -290,7 +274,7 @@ export function ReportsClient({
         )}
       </div>
 
-      {/* Tab Contents */}
+      {/* Loading Indicator */}
       {isPending && (
         <div className="flex items-center justify-center py-4 text-xs text-muted-foreground animate-pulse">
           <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin text-primary" />
@@ -298,27 +282,30 @@ export function ReportsClient({
         </div>
       )}
 
-      {activeTab === "sales" && salesData && <SalesReportView data={salesData} />}
-
-      {activeTab === "stock" && stockData && (
-        <StockReportView
-          data={stockData}
-          categories={categories}
-          brands={brands}
-          onFilterChange={handleStockFilterChange}
+      {/* Tab 1: Laporan Penjualan (Laba Rugi + Komisi) */}
+      {activeTab === "sales" && profitData && (
+        <ProfitReportView
+          data={profitData}
+          onCommissionUpdated={handleRefresh}
         />
       )}
 
-      {activeTab === "profit" && isSuperAdmin && profitData && (
-        <ProfitReportView data={profitData} />
+      {/* Tab 2: Pengeluaran Harian */}
+      {activeTab === "daily-expenses" && dailyExpensesData && (
+        <DailyExpenseView
+          data={dailyExpensesData}
+          onRefresh={handleRefresh}
+        />
       )}
 
-      {activeTab === "bestseller" && bestSellersData && (
-        <BestSellerReportView
-          data={bestSellersData}
-          currentSortBy={bestSellerSort}
-          currentLimit={bestSellerLimit}
-          onFilterChange={handleBestSellerFilterChange}
+      {/* Tab 3: Laporan Keuangan Bulanan */}
+      {activeTab === "financial" && financialData && (
+        <FinancialReportView
+          data={financialData}
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
+          onMonthYearChange={handleMonthYearChange}
+          onRefresh={handleRefresh}
         />
       )}
     </div>

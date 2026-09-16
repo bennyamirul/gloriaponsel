@@ -44,7 +44,7 @@ export async function getStoreSettings() {
  * Memperbarui profil toko dan konfigurasi default (Super Admin Only)
  */
 export async function updateStoreSettings(formData: FormData) {
-  await requireRole(["super_admin"]);
+  await requireRole(["owner", "super_admin"]);
 
   const storeName = formData.get("storeName") as string;
   const phone = (formData.get("phone") as string) || "";
