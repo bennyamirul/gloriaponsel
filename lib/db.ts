@@ -54,13 +54,29 @@ export async function ensureDbSchema() {
       ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
     `);
 
-    // 3. Kolom-kolom baru di products
+    // 3. Pastikan tabel push_subscriptions ada
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS \`push_subscriptions\` (
+        \`id\` VARCHAR(191) NOT NULL,
+        \`user_id\` VARCHAR(191) NOT NULL,
+        \`endpoint\` TEXT NOT NULL,
+        \`p256dh\` TEXT NOT NULL,
+        \`auth\` VARCHAR(191) NOT NULL,
+        \`user_agent\` VARCHAR(255) NULL,
+        \`created_at\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+        \`updated_at\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        INDEX \`push_subscriptions_user_id_idx\`(\`user_id\`),
+        PRIMARY KEY (\`id\`)
+      ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    `);
+
+    // 4. Kolom-kolom baru di products
     try { await db.$executeRawUnsafe("ALTER TABLE `products` ADD COLUMN `is_barcode_printed` BOOLEAN NOT NULL DEFAULT FALSE;"); } catch {}
     try { await db.$executeRawUnsafe("ALTER TABLE `products` ADD COLUMN `barcode_printed_at` DATETIME(3) NULL;"); } catch {}
     try { await db.$executeRawUnsafe("ALTER TABLE `products` ADD COLUMN `catalog_id` VARCHAR(191) NULL;"); } catch {}
     try { await db.$executeRawUnsafe("ALTER TABLE `products` ADD COLUMN `created_by` VARCHAR(191) NULL;"); } catch {}
 
-    // 4. Kolom baru di users
+    // 5. Kolom baru di users
     try { await db.$executeRawUnsafe("ALTER TABLE `users` ADD COLUMN `role_id` VARCHAR(191) NULL;"); } catch {}
 
     isSynced = true;

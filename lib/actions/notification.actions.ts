@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { Role } from "@prisma/client";
+import { sendPushToUsers, sendPushToRole } from "@/lib/push-notification";
 
 export type NotificationType =
   | "stock_approval"
@@ -74,6 +75,16 @@ export async function createNotification(params: CreateNotificationParams) {
           targetRole: targetRole ? (targetRole as Role) : null,
         },
       });
+
+      if (targetRole) {
+        sendPushToRole(targetRole, {
+          title,
+          body: message,
+          url: link || "/dashboard",
+          tag: `notif-${type}-${Date.now()}`,
+        }).catch(() => {});
+      }
+
       return { success: true };
     }
 
@@ -89,6 +100,19 @@ export async function createNotification(params: CreateNotificationParams) {
     await db.notification.createMany({
       data: records,
     });
+
+    // Kirim Web Push Notification langsung ke HP yang terdaftar
+    const finalUserIds = Array.from(userIdsToNotify);
+    if (finalUserIds.length > 0) {
+      sendPushToUsers(finalUserIds, {
+        title,
+        body: message,
+        url: link || "/dashboard",
+        tag: `notif-${type}-${Date.now()}`,
+      }).catch((pushErr) => {
+        console.warn("sendPushToUsers background warning:", pushErr);
+      });
+    }
 
     return { success: true };
   } catch (error) {

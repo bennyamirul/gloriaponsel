@@ -61,6 +61,7 @@ model User {
   dailyExpenses   DailyExpense[]
   monthlyExpenses MonthlyExpense[]
   notifications   Notification[]
+  pushSubscriptions PushSubscription[]
 
   @@index([roleId])
   @@map("users")
@@ -280,5 +281,21 @@ model Catalog {
 
   @@index([isActive])
   @@map("catalogs")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @db.Text
+  p256dh    String   @db.Text
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 

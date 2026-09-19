@@ -29,6 +29,8 @@ import {
 } from "@/lib/actions/notification.actions";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { playNotificationRingtone } from "@/lib/utils/audio-chime";
+import { PushNotificationToggle } from "@/components/notifications/push-notification-toggle";
 
 interface NotificationItem {
   id: string;
@@ -57,10 +59,11 @@ export function NotificationDropdown({ userRole }: NotificationDropdownProps) {
     try {
       const res = await getNotifications(30);
       if (res) {
-        // Tampilkan toast jika ada notifikasi baru masuk
+        // Tampilkan toast dan bunyikan nada dering jika ada notifikasi baru masuk
         if (showToastOnNew && res.unreadCount > prevUnreadRef.current && res.notifications.length > 0) {
           const newest = res.notifications[0];
           if (!newest.isRead) {
+            playNotificationRingtone(0.5);
             toast.info(newest.title, {
               description: newest.message,
               action: newest.link
@@ -281,6 +284,11 @@ export function NotificationDropdown({ userRole }: NotificationDropdownProps) {
               </Button>
             )}
           </div>
+        </div>
+
+        {/* Push Notification Toggle & Ringtone Test Widget */}
+        <div className="p-3 border-b border-border bg-muted/15">
+          <PushNotificationToggle />
         </div>
 
         {/* Filter Tabs */}

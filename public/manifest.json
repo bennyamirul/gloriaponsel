@@ -1,0 +1,25 @@
+﻿{
+  "name": "Gloria Ponsel Backoffice & POS",
+  "short_name": "GloriaPonsel",
+  "description": "Sistem Manajemen Toko, Kasir POS & Stok Gloria Ponsel",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logoGP.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logoGP.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

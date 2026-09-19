@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { updateStoreSettings } from "@/lib/actions/setting.actions";
 import { compressImage } from "@/lib/image-compress";
+import { PushNotificationToggle } from "@/components/notifications/push-notification-toggle";
 
 interface StoreSettingData {
   id: string;
@@ -190,6 +191,13 @@ export function SettingsClient({ initialSettings }: { initialSettings: StoreSett
                   Pesan ini akan dicetak otomatis di struk kasir fisik 58mm / 80mm setelah transaksi selesai.
                 </p>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Pengaturan Notifikasi HP & Nada Dering */}
+          <Card className="rounded-2xl border-border bg-card shadow-xs">
+            <CardContent className="p-6">
+              <PushNotificationToggle />
             </CardContent>
           </Card>
         </div>
