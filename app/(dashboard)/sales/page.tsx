@@ -8,7 +8,7 @@ import { ShoppingBag } from "lucide-react";
 export default async function SalesPage() {
   const [user, productsData, recentSales, storeSettings] = await Promise.all([
     requireAuth(),
-    getProducts({ status: "available", limit: 200 }),
+    getProducts({ status: "available", limit: 2000 }),
     db.sale.findMany({
       where: { customerName: { not: null } },
       select: { id: true, customerName: true, customerPhone: true },

@@ -234,33 +234,30 @@ export function SalesPosClient({
 
     const q = barcodeInput.trim().toLowerCase();
     if (!q) {
-      // Saat input kosong / baru diklik, langsung munculkan produk siap jual
-      const available = products.filter(isReadyProduct);
-      return available.slice(0, 20);
+      // Saat input kosong / baru diklik, langsung munculkan semua produk siap jual
+      return products.filter(isReadyProduct);
     }
-    return products
-      .filter((p) => {
-        if (!isReadyProduct(p)) return false;
-        const matchName = p.name.toLowerCase().includes(q);
-        const matchImei = p.imei ? p.imei.toLowerCase().includes(q) : false;
-        const matchSku = p.sku ? p.sku.toLowerCase().includes(q) : false;
-        const matchBrand = p.brandName
-          ? p.brandName.toLowerCase().includes(q)
-          : false;
-        const matchCapacity = p.capacity
-          ? p.capacity.toLowerCase().includes(q)
-          : false;
-        const matchColor = p.color ? p.color.toLowerCase().includes(q) : false;
-        return (
-          matchName ||
-          matchImei ||
-          matchSku ||
-          matchBrand ||
-          matchCapacity ||
-          matchColor
-        );
-      })
-      .slice(0, 20);
+    return products.filter((p) => {
+      if (!isReadyProduct(p)) return false;
+      const matchName = p.name.toLowerCase().includes(q);
+      const matchImei = p.imei ? p.imei.toLowerCase().includes(q) : false;
+      const matchSku = p.sku ? p.sku.toLowerCase().includes(q) : false;
+      const matchBrand = p.brandName
+        ? p.brandName.toLowerCase().includes(q)
+        : false;
+      const matchCapacity = p.capacity
+        ? p.capacity.toLowerCase().includes(q)
+        : false;
+      const matchColor = p.color ? p.color.toLowerCase().includes(q) : false;
+      return (
+        matchName ||
+        matchImei ||
+        matchSku ||
+        matchBrand ||
+        matchCapacity ||
+        matchColor
+      );
+    });
   }, [barcodeInput, products]);
 
   // Add product to transaction lines
@@ -1051,13 +1048,13 @@ export function SalesPosClient({
               {isSearchDropdownOpen && (
                 <div
                   ref={searchDropdownRef}
-                  className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-popover text-popover-foreground border border-border shadow-xl rounded-xl overflow-hidden divide-y divide-border/60 max-h-80 overflow-y-auto"
+                  className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-popover text-popover-foreground border border-border shadow-xl rounded-xl overflow-hidden divide-y divide-border/60 max-h-96 overflow-y-auto"
                 >
-                  <div className="p-2.5 bg-muted/60 text-[11px] font-semibold text-muted-foreground flex items-center justify-between border-b border-border/50">
+                  <div className="p-2.5 bg-muted/95 backdrop-blur-xs sticky top-0 z-10 text-[11px] font-semibold text-muted-foreground flex items-center justify-between border-b border-border/50">
                     <span>
                       {barcodeInput.trim()
-                        ? `Hasil Pencarian (${searchMatches.length})`
-                        : `Daftar Produk Tersedia (${searchMatches.length})`}
+                        ? `Hasil Pencarian (${searchMatches.length} produk)`
+                        : `Daftar Produk Ready / Siap Jual (${searchMatches.length} unit)`}
                     </span>
                     <span className="text-[10px] text-muted-foreground/80">
                       Klik produk untuk memasukkan ke keranjang
@@ -1068,7 +1065,7 @@ export function SalesPosClient({
                     <div className="p-6 text-center text-xs text-muted-foreground">
                       {barcodeInput.trim()
                         ? `Tidak ada produk yang cocok dengan "${barcodeInput}".`
-                        : "Belum ada data produk tersedia."}
+                        : "Tidak ada produk dengan status ready / stok tersedia."}
                     </div>
                   ) : (
                     searchMatches.map((p) => {
