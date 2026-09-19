@@ -9,6 +9,9 @@ import {
   Loader2,
   Image as ImageIcon,
   Smartphone,
+  Tablet,
+  Watch,
+  Tag,
   Headphones,
   ScanBarcode,
   Calendar,
@@ -18,6 +21,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CatalogItem } from "@/lib/actions/catalog.actions";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +44,7 @@ import {
 } from "@/components/ui/form";
 import {
   ProductSchema,
+  getProductSchema,
   ProductFormValues,
 } from "@/lib/validations/product.schema";
 import {
@@ -50,6 +55,7 @@ import {
 import {
   BarcodeScannerModal,
   scanBarcodeFromFile,
+  promptCameraPermission,
 } from "@/components/ui/barcode-scanner-modal";
 import { compressImage } from "@/lib/image-compress";
 
@@ -58,7 +64,7 @@ export interface ProductItem {
   name: string;
   sku: string;
   imei?: string | null;
-  productType?: "phone" | "accessory";
+  productType?: string;
   capacity?: string | null;
   color?: string | null;
   completeness?: string | null;
@@ -73,6 +79,7 @@ export interface ProductItem {
   variant?: string | null;
   brandId?: string | null;
   categoryId?: string | null;
+  catalogId?: string | null;
   sellingPrice: number;
   purchasePrice: number | null;
   stock: number;
@@ -80,6 +87,7 @@ export interface ProductItem {
   imageUrl: string | null;
   description: string | null;
   rejectionReason?: string | null;
+  createdBy?: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -90,9 +98,37 @@ interface ProductFormSheetProps {
   editingProduct: ProductItem | null;
   categories?: { id: string; name: string }[];
   brands?: { id: string; name: string }[];
+  catalogs?: CatalogItem[];
   isSuperAdmin: boolean;
   onSuccess: () => void;
-  initialType?: "phone" | "accessory";
+  initialType?: string;
+}
+
+const DEFAULT_CATALOGS: CatalogItem[] = [
+  { id: "cat-phone", name: "Handphone", code: "phone", hasImei: true, displayOrder: 1, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-tablet", name: "Tablet", code: "tablet", hasImei: true, displayOrder: 2, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-smartwatch", name: "SmartWatch", code: "smartwatch", hasImei: true, displayOrder: 3, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-accessory", name: "Aksesoris", code: "accessory", hasImei: false, displayOrder: 4, description: "", isActive: true, createdAt: "", updatedAt: "" },
+];
+
+function resolveProductStatus(
+  status?: string | null,
+  isSuperAdmin = false
+): "available" | "sold" | "menunggu_persetujuan" | "ditolak" {
+  if (status === "sold") return "sold";
+  if (status === "ditolak") return "ditolak";
+  if (status === "menunggu_persetujuan") return "menunggu_persetujuan";
+  if (status === "available") return "available";
+  return isSuperAdmin ? "available" : "menunggu_persetujuan";
+}
+
+function getCategoryIcon(code: string) {
+  const c = code.toLowerCase();
+  if (c.includes("phone") || c.includes("hp")) return <Smartphone className="h-4 w-4" />;
+  if (c.includes("tablet") || c.includes("pad")) return <Tablet className="h-4 w-4" />;
+  if (c.includes("watch")) return <Watch className="h-4 w-4" />;
+  if (c.includes("accessory") || c.includes("aksesoris")) return <Headphones className="h-4 w-4" />;
+  return <Tag className="h-4 w-4" />;
 }
 
 const COMMON_BRANDS = [
@@ -153,6 +189,7 @@ export function ProductFormSheet({
   open,
   onOpenChange,
   editingProduct,
+  catalogs,
   isSuperAdmin,
   onSuccess,
   initialType = "phone",
@@ -204,7 +241,7 @@ export function ProductFormSheet({
   const getTodayString = () => new Date().toISOString().split("T")[0];
 
   const form = useForm<ProductFormValues>({
-    resolver: zodResolver(ProductSchema),
+    resolver: zodResolver(getProductSchema(isSuperAdmin)),
     defaultValues: {
       name: "",
       productType: initialType,
@@ -217,6 +254,7 @@ export function ProductFormSheet({
       retailSupplier: "",
       grade: "",
       categoryName: "",
+      catalogId: "",
       sku: "",
       variant: "",
       purchasePrice: 0,
@@ -230,12 +268,37 @@ export function ProductFormSheet({
     },
   });
 
-  const selectedProductType = form.watch("productType");
+  const selectedProductType = form.watch("productType") || "phone";
+
+  const activeCatalogs = (catalogs && catalogs.length > 0 ? catalogs : DEFAULT_CATALOGS).filter(
+    (c) => c.isActive
+  );
+
+  const currentCatalog =
+    activeCatalogs.find((c) => c.code === selectedProductType) ||
+    activeCatalogs.find(
+      (c) =>
+        c.code === "phone" &&
+        (selectedProductType === "handphone" || selectedProductType === "phone")
+    ) ||
+    activeCatalogs.find(
+      (c) =>
+        c.code === "accessory" &&
+        (selectedProductType === "aksesoris" || selectedProductType === "accessory")
+    ) ||
+    (selectedProductType === "accessory" || selectedProductType === "aksesoris"
+      ? { hasImei: false, name: "Aksesoris", code: "accessory" }
+      : { hasImei: true, name: selectedProductType, code: selectedProductType });
+
+  const isImeiCategory = currentCatalog?.hasImei ?? (selectedProductType !== "accessory");
+  const isSmartwatch =
+    selectedProductType.toLowerCase().includes("smartwatch") ||
+    selectedProductType.toLowerCase().includes("watch") ||
+    currentCatalog?.code === "smartwatch";
 
   useEffect(() => {
     if (editingProduct) {
-      const type =
-        (editingProduct.productType as "phone" | "accessory") || "phone";
+      const type = editingProduct.productType || "phone";
       const cleanStr = (val?: string | null) => {
         if (!val || val.trim() === "" || val.trim() === "-") return "";
         return val.trim();
@@ -251,9 +314,14 @@ export function ProductFormSheet({
         }
       };
 
+      const editCat =
+        activeCatalogs.find((c) => c.code === type) ||
+        (type === "accessory" ? { hasImei: false } : { hasImei: true });
+      const editHasImei = editCat.hasImei ?? (type !== "accessory");
+
       const resolvedImei =
         cleanStr(editingProduct.imei) ||
-        (type === "phone" ? cleanStr(editingProduct.sku) : "");
+        (editHasImei ? cleanStr(editingProduct.sku) : "");
 
       form.reset({
         name: editingProduct.name || "",
@@ -268,16 +336,17 @@ export function ProductFormSheet({
         retailSupplier: cleanStr(editingProduct.retailSupplier),
         grade: cleanStr((editingProduct as any).grade),
         categoryName: cleanStr(editingProduct.categoryName),
+        catalogId: cleanStr(editingProduct.catalogId),
         sku:
           cleanStr(editingProduct.sku) ||
-          (type === "phone" ? resolvedImei : ""),
+          (editHasImei ? resolvedImei : ""),
         variant: cleanStr(editingProduct.variant),
         purchasePrice: editingProduct.purchasePrice ?? 0,
         sellingPrice: editingProduct.sellingPrice ?? 0,
         stock:
           typeof editingProduct.stock === "number"
             ? editingProduct.stock
-            : type === "phone"
+            : editHasImei
               ? 1
               : 10,
         minStock:
@@ -287,11 +356,9 @@ export function ProductFormSheet({
         imageUrl: editingProduct.imageUrl || "",
         description: cleanStr(editingProduct.description),
         status:
-          editingProduct.status === "ditolak" || !isSuperAdmin
+          editingProduct.status === "ditolak"
             ? "menunggu_persetujuan"
-            : editingProduct.status === "sold"
-              ? "sold"
-              : "available",
+            : resolveProductStatus(editingProduct.status, isSuperAdmin),
         isActive: editingProduct.isActive ?? true,
       });
       setPreviewImage(editingProduct.imageUrl || null);
@@ -306,7 +373,24 @@ export function ProductFormSheet({
         color: "",
         completeness: "Fullset Original",
         retailSupplier: "",
-        categoryName: "",
+        categoryName:
+          initialType === "phone"
+            ? "Handphone"
+            : initialType === "tablet"
+              ? "Tablet"
+              : initialType === "smartwatch"
+                ? "SmartWatch"
+                : initialType === "accessory"
+                  ? "Aksesoris"
+                  : "",
+        catalogId:
+          initialType === "tablet"
+            ? "cat-tablet"
+            : initialType === "smartwatch"
+              ? "cat-smartwatch"
+              : initialType === "accessory"
+                ? "cat-accessory"
+                : "cat-phone",
         sku: "",
         variant: "",
         purchasePrice: 0,
@@ -367,17 +451,18 @@ export function ProductFormSheet({
       const payload: ProductFormValues = {
         ...values,
         status: isSuperAdmin
-          ? values.status || "available"
-          : "menunggu_persetujuan",
+          ? (values.status || "available")
+          : editingProduct
+            ? (editingProduct.status === "ditolak" ? "menunggu_persetujuan" : resolveProductStatus(editingProduct.status, false))
+            : "menunggu_persetujuan",
         purchasePrice: isSuperAdmin
           ? values.purchasePrice
           : (editingProduct?.purchasePrice ?? 0),
         sellingPrice: isSuperAdmin
           ? values.sellingPrice
           : (editingProduct?.sellingPrice ?? 0),
-        grade: isSuperAdmin
-          ? values.grade
-          : ((editingProduct as any)?.grade ?? null),
+        grade: values.grade || null,
+        capacity: isSmartwatch ? null : (values.capacity || null),
       };
 
       if (editingProduct) {
@@ -453,47 +538,57 @@ export function ProductFormSheet({
                 </div>
               )}
 
-              {/* Product Type Toggle (Phone vs Aksesoris) */}
+              {/* Product Type Selection via Dynamic Catalogs */}
               <div>
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
-                  Tipe Produk
+                  Kategori / Tipe Produk
                 </Label>
-                <div className="grid grid-cols-2 gap-2 p-1 bg-muted/60 rounded-xl border border-border">
-                  <button
-                    type="button"
-                    disabled={!!editingProduct}
-                    onClick={() => {
-                      form.setValue("productType", "phone");
-                      form.setValue("stock", 1);
-                    }}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-semibold transition ${
-                      selectedProductType === "phone"
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Smartphone className="h-4 w-4" />
-                    <span>Unit Handphone</span>
-                  </button>
+                <div className="flex flex-wrap gap-2 p-1.5 bg-muted/60 rounded-xl border border-border">
+                  {activeCatalogs.map((cat) => {
+                    const currentCatalogId = form.watch("catalogId");
+                    const isSelected =
+                      (currentCatalogId && currentCatalogId === cat.id) ||
+                      selectedProductType === cat.code ||
+                      (cat.code === "phone" && (selectedProductType === "handphone" || selectedProductType === "phone")) ||
+                      (cat.code === "accessory" && (selectedProductType === "aksesoris" || selectedProductType === "accessory"));
 
-                  <button
-                    type="button"
-                    disabled={!!editingProduct}
-                    onClick={() => {
-                      form.setValue("productType", "accessory");
-                      if (form.getValues("stock") <= 1) {
-                        form.setValue("stock", 10);
-                      }
-                    }}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-semibold transition ${
-                      selectedProductType === "accessory"
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Headphones className="h-4 w-4" />
-                    <span>Aksesoris</span>
-                  </button>
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          form.setValue("catalogId", cat.id);
+                          form.setValue("productType", cat.code);
+                          form.setValue("categoryName", cat.name);
+                          if (cat.hasImei) {
+                            const currentSku = form.getValues("sku");
+                            if (currentSku && !form.getValues("imei")) {
+                              form.setValue("imei", currentSku);
+                            }
+                            if (!form.getValues("stock") || form.getValues("stock") <= 0) {
+                              form.setValue("stock", 1);
+                            }
+                          } else {
+                            const currentImei = form.getValues("imei");
+                            if (currentImei && !form.getValues("sku")) {
+                              form.setValue("sku", currentImei);
+                            }
+                            if (!form.getValues("stock") || form.getValues("stock") <= 1) {
+                              form.setValue("stock", 10);
+                            }
+                          }
+                        }}
+                        className={`flex items-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold cursor-pointer transition ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {getCategoryIcon(cat.code)}
+                        <span>{cat.name}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -553,8 +648,8 @@ export function ProductFormSheet({
                 />
               </div>
 
-              {/* KHUSUS HANDPHONE: IMEI DENGAN SCAN BARCODE */}
-              {selectedProductType === "phone" && (
+              {/* KHUSUS GADGET DENGAN IMEI: IMEI DENGAN SCAN BARCODE */}
+              {isImeiCategory && (
                 <div className="p-4 rounded-xl border-2 border-primary/20 bg-primary/5 space-y-3">
                   <FormField
                     control={form.control}
@@ -564,7 +659,7 @@ export function ProductFormSheet({
                         <div className="flex items-center justify-between gap-2 flex-wrap">
                           <FormLabel className="text-sm font-bold text-foreground flex items-center gap-2">
                             <ScanBarcode className="h-4 w-4 text-primary" />
-                            <span>Nomor IMEI (15 Digit) *</span>
+                            <span>Nomor IMEI / Serial ({currentCatalog?.name || "Unit"}) *</span>
                           </FormLabel>
                           <div className="flex items-center gap-1.5">
                             <Button
@@ -572,6 +667,7 @@ export function ProductFormSheet({
                               size="sm"
                               variant="outline"
                               onClick={() => {
+                                promptCameraPermission();
                                 setActiveScanTarget("imei");
                                 setIsScannerOpen(true);
                               }}
@@ -586,7 +682,7 @@ export function ProductFormSheet({
                               ) : (
                                 <Camera className="h-3.5 w-3.5" />
                               )}
-                              <span>Foto HP</span>
+                              <span>Foto Unit</span>
                               <input
                                 type="file"
                                 accept="image/*"
@@ -603,7 +699,7 @@ export function ProductFormSheet({
                         <FormControl>
                           <div className="relative">
                             <Input
-                              placeholder="Scan barcode IMEI dus atau ketik manual..."
+                              placeholder="Scan barcode IMEI/Serial dus atau ketik manual..."
                               className="font-mono text-sm tracking-wider h-10 pr-24 bg-background"
                               {...field}
                               value={field.value || ""}
@@ -614,7 +710,7 @@ export function ProductFormSheet({
                           </div>
                         </FormControl>
                         <p className="text-[11px] text-muted-foreground">
-                          IMEI akan otomatis diubah menjadi barcode Code 128
+                          IMEI / Serial akan otomatis diubah menjadi barcode Code 128
                           untuk ditempel pada unit.
                         </p>
                         <FormMessage />
@@ -624,8 +720,8 @@ export function ProductFormSheet({
                 </div>
               )}
 
-              {/* KHUSUS AKSESORIS: SKU / BARCODE & JENIS */}
-              {selectedProductType === "accessory" && (
+              {/* KHUSUS NON-IMEI (AKSESORIS): SKU / BARCODE & JENIS */}
+              {!isImeiCategory && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -724,8 +820,8 @@ export function ProductFormSheet({
                     <FormControl>
                       <Input
                         placeholder={
-                          selectedProductType === "phone"
-                            ? "Contoh: iPhone 15 Pro, Galaxy S24 Ultra, Redmi Note 13..."
+                          isImeiCategory
+                            ? "Contoh: iPhone 15 Pro, Galaxy Tab S9, Apple Watch Ultra..."
                             : "Contoh: Fast Charger 25W Type-C, Tempered Glass Anti-Spy..."
                         }
                         {...field}
@@ -737,44 +833,46 @@ export function ProductFormSheet({
                 )}
               />
 
-              {/* SPESIFIKASI KHUSUS HP (Kapasitas, Warna, Kelengkapan) */}
-              {selectedProductType === "phone" && (
+              {/* SPESIFIKASI KHUSUS UNIT BER-IMEI (Kapasitas, Warna, Kelengkapan, Grade) */}
+              {isImeiCategory && (
                 <div className="space-y-4 p-4 rounded-xl border border-border bg-muted/20">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Kapasitas (RAM/ROM) */}
-                    <FormField
-                      control={form.control}
-                      name="capacity"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Kapasitas (RAM / Storage) *</FormLabel>
-                          <FormControl>
-                            <div className="space-y-1.5">
-                              <Input
-                                placeholder="Contoh: 8/256GB, 12/512GB..."
-                                {...field}
-                                value={field.value || ""}
-                              />
-                              <div className="flex flex-wrap gap-1">
-                                {COMMON_CAPACITIES.slice(3, 7).map((cap) => (
-                                  <button
-                                    key={cap}
-                                    type="button"
-                                    onClick={() =>
-                                      form.setValue("capacity", cap)
-                                    }
-                                    className="text-[10px] px-1.5 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
-                                  >
-                                    {cap}
-                                  </button>
-                                ))}
+                  <div className={`grid grid-cols-1 ${!isSmartwatch ? "sm:grid-cols-2" : ""} gap-4`}>
+                    {/* Kapasitas (RAM/ROM) - Disembunyikan untuk SmartWatch */}
+                    {!isSmartwatch && (
+                      <FormField
+                        control={form.control}
+                        name="capacity"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Kapasitas (RAM / Storage) *</FormLabel>
+                            <FormControl>
+                              <div className="space-y-1.5">
+                                <Input
+                                  placeholder="Contoh: 8/256GB, 12/512GB..."
+                                  {...field}
+                                  value={field.value || ""}
+                                />
+                                <div className="flex flex-wrap gap-1">
+                                  {COMMON_CAPACITIES.slice(3, 7).map((cap) => (
+                                    <button
+                                      key={cap}
+                                      type="button"
+                                      onClick={() =>
+                                        form.setValue("capacity", cap)
+                                      }
+                                      className="text-[10px] px-1.5 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
+                                    >
+                                      {cap}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
 
                     {/* Warna */}
                     <FormField
@@ -832,42 +930,40 @@ export function ProductFormSheet({
                       )}
                     />
 
-                    {/* Grade Unit - Hanya untuk Super Admin / Owner */}
-                    {isSuperAdmin && (
-                      <FormField
-                        control={form.control}
-                        name="grade"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Grade Kondisi Unit</FormLabel>
-                            <FormControl>
-                              <div className="space-y-1.5">
-                                <Input
-                                  placeholder="Contoh: Grade A, Grade B, Like New..."
-                                  {...field}
-                                  value={field.value || ""}
-                                />
-                                <div className="flex flex-wrap gap-1">
-                                  {COMMON_GRADES.map((gr) => (
-                                    <button
-                                      key={gr}
-                                      type="button"
-                                      onClick={() =>
-                                        form.setValue("grade", gr)
-                                      }
-                                      className="text-[10px] px-2 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
-                                    >
-                                      {gr}
-                                    </button>
-                                  ))}
-                                </div>
+                    {/* Grade Unit */}
+                    <FormField
+                      control={form.control}
+                      name="grade"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Grade Kondisi Unit</FormLabel>
+                          <FormControl>
+                            <div className="space-y-1.5">
+                              <Input
+                                placeholder="Contoh: Grade A, Grade B, Like New..."
+                                {...field}
+                                value={field.value || ""}
+                              />
+                              <div className="flex flex-wrap gap-1">
+                                {COMMON_GRADES.map((gr) => (
+                                  <button
+                                    key={gr}
+                                    type="button"
+                                    onClick={() =>
+                                      form.setValue("grade", gr)
+                                    }
+                                    className="text-[10px] px-2 py-0.5 rounded bg-background hover:bg-primary/10 hover:text-primary border border-border text-muted-foreground transition"
+                                  >
+                                    {gr}
+                                  </button>
+                                ))}
                               </div>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    )}
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
                 </div>
               )}
@@ -957,6 +1053,19 @@ export function ProductFormSheet({
                     </FormItem>
                   )}
                 />
+              )}
+
+              {/* Catatan untuk Staff Admin bahwa HPP & Harga Jual dikelola Owner */}
+              {!isSuperAdmin && (
+                <div className="rounded-xl border border-border/80 bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                    <ShieldCheck className="h-4 w-4 text-indigo-600" />
+                    <span>Informasi Harga & Status</span>
+                  </div>
+                  <p>
+                    HPP (Harga Modal) dan Harga Jual dikelola secara eksklusif oleh Owner. Anda dapat mengedit spesifikasi unit, grade, kelengkapan, nomor IMEI/SKU, dan foto barang (termasuk barang yang masih menunggu persetujuan maupun yang Anda input).
+                  </p>
+                </div>
               )}
 
               {/* Aksesoris: Stok Awal & Min Stok (HP auto 1 stok) */}

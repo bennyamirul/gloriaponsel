@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
+import { db, ensureDbSchema } from "@/lib/db";
 
 export type RoleType =
   | "owner"
@@ -17,6 +17,7 @@ export interface UserSession {
   name?: string | null;
   email?: string | null;
   role: RoleType;
+  roleId?: string | null;
 }
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -49,6 +50,7 @@ export async function verifyToken(token: string): Promise<UserSession | null> {
       name: (payload.name as string) || null,
       email: (payload.email as string) || null,
       role: payload.role as RoleType,
+      roleId: (payload.roleId as string) || null,
     };
   } catch {
     return null;
@@ -82,10 +84,31 @@ export async function getCurrentUser(): Promise<UserSession | null> {
   if (!verified) return null;
 
   try {
+    ensureDbSchema().catch(() => {});
+
     const dbUser = await db.user.findUnique({
       where: { id: verified.id },
       select: { id: true, username: true, name: true, email: true, role: true, isActive: true },
     });
+
+    let roleId: string | null = verified.roleId || null;
+    try {
+      const uRaw = await db.$queryRawUnsafe<any[]>(
+        "SELECT `role_id` FROM `users` WHERE `id` = ? OR `username` = ? LIMIT 1",
+        verified.id,
+        verified.username || ""
+      );
+      if (uRaw?.[0]?.role_id) roleId = uRaw[0].role_id;
+    } catch {}
+
+    const defaultRoleId =
+      verified.role === "owner" || verified.role === "super_admin"
+        ? "role-owner"
+        : verified.role === "staff_gudang"
+          ? "role-staff-gudang"
+          : verified.role === "staff_keuangan"
+            ? "role-staff-keuangan"
+            : "role-admin-kasir";
 
     if (dbUser && dbUser.isActive) {
       return {
@@ -94,6 +117,7 @@ export async function getCurrentUser(): Promise<UserSession | null> {
         name: dbUser.name,
         email: dbUser.email,
         role: dbUser.role as RoleType,
+        roleId: roleId || defaultRoleId,
       };
     }
 
@@ -111,6 +135,7 @@ export async function getCurrentUser(): Promise<UserSession | null> {
           name: dbUserByUsername.name,
           email: dbUserByUsername.email,
           role: dbUserByUsername.role as RoleType,
+          roleId: roleId || defaultRoleId,
         };
       }
     }
@@ -129,6 +154,7 @@ export async function getCurrentUser(): Promise<UserSession | null> {
           name: dbUserByEmail.name,
           email: dbUserByEmail.email,
           role: dbUserByEmail.role as RoleType,
+          roleId: roleId || defaultRoleId,
         };
       }
     }

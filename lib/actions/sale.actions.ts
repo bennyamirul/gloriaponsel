@@ -598,6 +598,7 @@ export async function getSales(params?: SalesQueryParams) {
                 capacity: true,
                 color: true,
                 variant: true,
+                completeness: true,
               },
             },
           },
@@ -637,6 +638,7 @@ export async function getSales(params?: SalesQueryParams) {
         capacity: it.product.capacity,
         color: it.product.color,
         variant: it.product.variant,
+        completeness: (it.product as any)?.completeness || null,
         qty: it.qty,
         unitPrice: Number(it.unitPrice),
         subtotal: Number(it.subtotal),
@@ -666,7 +668,16 @@ export async function getSaleDetail(saleId: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, variant: true },
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              variant: true,
+              imei: true,
+              capacity: true,
+              color: true,
+              completeness: true,
+            },
           },
         },
       },
@@ -704,6 +715,10 @@ export async function getSaleDetail(saleId: string) {
         name: it.product.name,
         sku: it.product.sku,
         variant: it.product.variant,
+        imei: it.product.imei,
+        capacity: it.product.capacity,
+        color: it.product.color,
+        completeness: (it.product as any)?.completeness || null,
         qty: it.qty,
         unitPrice: Number(it.unitPrice),
         subtotal: Number(it.subtotal),
@@ -1434,7 +1449,20 @@ export async function uploadSalePaymentProof(saleId: string, formData: FormData)
   try {
     const sale = await db.sale.findUnique({
       where: { id: saleId },
-      select: { id: true, cashierId: true, invoiceNo: true },
+      select: {
+        id: true,
+        cashierId: true,
+        invoiceNo: true,
+        createdAt: true,
+        total: true,
+        customerName: true,
+        cashier: { select: { name: true } },
+        items: {
+          include: {
+            product: { select: { name: true, imei: true, sku: true } },
+          },
+        },
+      },
     });
 
     if (!sale) {
@@ -1475,7 +1503,10 @@ export async function uploadSalePaymentProof(saleId: string, formData: FormData)
     revalidatePath("/sales/history");
     revalidatePath("/dashboard");
 
-    return { success: true, paymentProofUrl };
+    return {
+      success: true,
+      paymentProofUrl,
+    };
   } catch (error: any) {
     console.error("uploadSalePaymentProof error:", error);
     return { error: error.message || "Gagal mengunggah bukti pembayaran." };

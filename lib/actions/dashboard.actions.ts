@@ -1,6 +1,6 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { db, ensureDbSchema } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
 export interface AdminPerformanceItem {
@@ -16,6 +16,7 @@ export interface AdminPerformanceItem {
 export async function getDashboardSummary() {
   const user = await requireAuth();
   const isSuperAdmin = user.role === "super_admin" || user.role === "owner";
+  ensureDbSchema().catch(() => {});
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -498,6 +499,21 @@ export async function getDashboardSummary() {
       where: { isActive: true },
       take: 12,
       orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        sku: true,
+        imei: true,
+        name: true,
+        productType: true,
+        capacity: true,
+        color: true,
+        status: true,
+        stock: true,
+        categoryName: true,
+        brandName: true,
+        createdAt: true,
+        entryDate: true,
+      },
     }),
   ]);
 

@@ -274,6 +274,23 @@ export async function scanBarcodeFromFile(file: File): Promise<string> {
   return "";
 }
 
+// Helper untuk memicu prompt izin kamera langsung saat tombol ditekan (User Gesture)
+export async function promptCameraPermission(): Promise<boolean> {
+  if (typeof window === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
+    return false;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+    });
+    stream.getTracks().forEach((t) => t.stop());
+    return true;
+  } catch (err) {
+    console.warn("Camera permission prompt error:", err);
+    return false;
+  }
+}
+
 export function BarcodeScannerModal({
   open,
   onOpenChange,
@@ -310,13 +327,6 @@ export function BarcodeScannerModal({
 
       setIsMobileDevice(mobile);
       setIsSecureCtx(secure);
-
-      // Jika di HP dan bukan HTTPS/localhost, browser mobile (Chrome/Safari) secara default
-      // menonaktifkan navigator.mediaDevices.getUserMedia (tidak akan memunculkan prompt izin).
-      // Arahkan otomatis ke Foto Kamera HP langsung agar pengguna tidak bingung!
-      if (open && mobile && !secure) {
-        setMode("upload");
-      }
     }
   }, [open]);
 
@@ -327,7 +337,7 @@ export function BarcodeScannerModal({
     try {
       if (!navigator?.mediaDevices?.getUserMedia) {
         if (!isSecureCtx) {
-          toast.info("Jaringan non-HTTPS di HP mengalihkan ke mode Foto Kamera HP.");
+          toast.info("Browser membatasi kamera live di HTTP. Mengalihkan ke Foto Kamera HP.");
           setMode("upload");
           return;
         }
@@ -357,7 +367,7 @@ export function BarcodeScannerModal({
         raw.includes("permission")
       ) {
         setScannerError(
-          "Izin akses kamera ditolak. Silakan klik ikon gembok / perizinan situs di bilah alamat browser HP Anda untuk mengizinkan kamera."
+          "Izin akses kamera belum diizinkan. Silakan klik ikon gembok / perizinan situs di bilah alamat browser HP Anda untuk mengizinkan kamera."
         );
       } else {
         setScannerError(err?.message || "Gagal mengaktifkan kamera.");
@@ -514,6 +524,28 @@ export function BarcodeScannerModal({
             );
           }
           throw new Error("Kamera tidak didukung atau izin belum diberikan pada browser ini.");
+        }
+
+        // Panggil getUserMedia seketika agar prompt izin "Allow camera" langsung muncul di browser HP
+        try {
+          const probeStream = await navigator.mediaDevices.getUserMedia({
+            video: selectedCameraId
+              ? { deviceId: { exact: selectedCameraId } }
+              : { facingMode: { ideal: facingMode } },
+          });
+          probeStream.getTracks().forEach((t) => t.stop());
+        } catch (permErr: any) {
+          const raw = (permErr?.message || String(permErr)).toLowerCase();
+          if (
+            permErr?.name === "NotAllowedError" ||
+            raw.includes("denied") ||
+            raw.includes("permission")
+          ) {
+            setScannerError(
+              "Izin kamera belum aktif. Tekan tombol 'Aktifkan Izin Kamera HP' di bawah untuk memunculkan pop-up izin browser HP Anda."
+            );
+            return;
+          }
         }
 
         // Hentikan dan bersihkan stream media apa pun yang masih aktif di DOM
@@ -732,13 +764,11 @@ export function BarcodeScannerModal({
       }
     }
 
-    const timer = setTimeout(() => {
-      initScanner();
-    }, 200);
+    // Jalankan inisialisasi seketika agar hak klik pengguna (user gesture) tidak hangus
+    initScanner();
 
     return () => {
       isMounted = false;
-      clearTimeout(timer);
       safeStopScanner();
     };
   }, [open, mode, selectedCameraId, facingMode, retryCount, handleDetected, safeStopScanner]);

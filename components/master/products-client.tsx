@@ -8,6 +8,8 @@ import {
   Trash2,
   Search,
   Smartphone,
+  Tablet,
+  Watch,
   Headphones,
   Printer,
   Calendar,
@@ -57,6 +59,7 @@ import {
   ProductFormSheet,
   ProductItem,
 } from "@/components/master/product-form-sheet";
+import { CatalogItem } from "@/lib/actions/catalog.actions";
 import {
   deleteProduct,
   toggleProductStatus,
@@ -70,33 +73,57 @@ import {
   ExchangeDetailData,
 } from "@/components/sales/exchange-detail-dialog";
 
+const DEFAULT_CATALOGS: CatalogItem[] = [
+  { id: "cat-phone", name: "Handphone", code: "phone", hasImei: true, displayOrder: 1, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-tablet", name: "Tablet", code: "tablet", hasImei: true, displayOrder: 2, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-smartwatch", name: "SmartWatch", code: "smartwatch", hasImei: true, displayOrder: 3, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-accessory", name: "Aksesoris", code: "accessory", hasImei: false, displayOrder: 4, description: "", isActive: true, createdAt: "", updatedAt: "" },
+];
+
+function getCategoryIcon(code: string) {
+  const c = code.toLowerCase();
+  if (c.includes("phone") || c.includes("hp")) return <Smartphone className="h-3 w-3" />;
+  if (c.includes("tablet") || c.includes("pad")) return <Tablet className="h-3 w-3" />;
+  if (c.includes("watch")) return <Watch className="h-3 w-3" />;
+  if (c.includes("accessory") || c.includes("aksesoris")) return <Headphones className="h-3 w-3" />;
+  return <Tag className="h-3 w-3" />;
+}
+
 interface ProductsClientProps {
   initialProducts: ProductItem[];
   total: number;
   categories?: { id: string; name: string }[];
   brands?: { id: string; name: string }[];
+  catalogs?: CatalogItem[];
   isSuperAdmin: boolean;
   currentUserRole?: string;
+  currentUserId?: string;
 }
 
 export function ProductsClient({
   initialProducts,
+  catalogs,
   isSuperAdmin,
   currentUserRole,
+  currentUserId,
 }: ProductsClientProps) {
   const isWarehouse = currentUserRole === "staff_gudang";
+  const isCashier =
+    currentUserRole === "admin_kasir" || currentUserRole === "admin";
   const isOwner =
     isSuperAdmin ||
     currentUserRole === "owner" ||
     currentUserRole === "super_admin";
 
+  const activeCatalogs = useMemo(() => {
+    return catalogs && catalogs.length > 0 ? catalogs : DEFAULT_CATALOGS;
+  }, [catalogs]);
+
   const [products, setProducts] = useState<ProductItem[]>(initialProducts);
   const [statusFilter, setStatusFilter] = useState<
     "all" | "ready" | "sold" | "menunggu_persetujuan" | "ditolak"
   >("all");
-  const [productTypeFilter, setProductTypeFilter] = useState<
-    "all" | "phone" | "accessory"
-  >("all");
+  const [productTypeFilter, setProductTypeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(
@@ -108,7 +135,6 @@ export function ProductsClient({
   const [productToApprove, setProductToApprove] = useState<ProductItem | null>(
     null,
   );
-  const [approvalGrade, setApprovalGrade] = useState("Grade A");
   const [approvalPurchasePrice, setApprovalPurchasePrice] = useState<number>(0);
   const [approvalSellingPrice, setApprovalSellingPrice] = useState<number>(0);
   const [isProcessingApproval, setIsProcessingApproval] = useState(false);
@@ -197,7 +223,6 @@ export function ProductsClient({
 
   const handleOpenApprovalModal = (prod: ProductItem) => {
     setProductToApprove(prod);
-    setApprovalGrade(prod.grade || "Grade A");
     setApprovalPurchasePrice(prod.purchasePrice || 0);
     setApprovalSellingPrice(prod.sellingPrice || 0);
     setApprovalModalOpen(true);
@@ -205,10 +230,6 @@ export function ProductsClient({
 
   const handleApproveProduct = async () => {
     if (!productToApprove) return;
-    if (!approvalGrade || approvalGrade.trim() === "") {
-      toast.error("Silakan tentukan Grade unit.");
-      return;
-    }
     if (approvalPurchasePrice <= 0) {
       toast.error("HPP (Harga Modal) harus lebih dari 0.");
       return;
@@ -221,7 +242,7 @@ export function ProductsClient({
     try {
       setIsProcessingApproval(true);
       const res = await approveProduct(productToApprove.id, {
-        grade: approvalGrade.trim(),
+        grade: productToApprove.grade || undefined,
         purchasePrice: approvalPurchasePrice,
         sellingPrice: approvalSellingPrice,
       });
@@ -234,7 +255,6 @@ export function ProductsClient({
               ? {
                   ...p,
                   status: "available",
-                  grade: approvalGrade.trim(),
                   purchasePrice: approvalPurchasePrice,
                   sellingPrice: approvalSellingPrice,
                 }
@@ -355,11 +375,18 @@ export function ProductsClient({
   const filteredProducts = useMemo(() => {
     return activeProducts
       .filter((p) => {
-        const isPhone = (p.productType || "phone") === "phone";
-
-        // 1. Device Type Filter
-        if (productTypeFilter === "phone" && !isPhone) return false;
-        if (productTypeFilter === "accessory" && isPhone) return false;
+        // 1. Device Type / Catalog Filter
+        if (productTypeFilter !== "all") {
+          const pType = (p.productType || "phone").toLowerCase();
+          const target = productTypeFilter.toLowerCase();
+          if (target === "phone" || target === "handphone") {
+            if (pType !== "phone" && pType !== "handphone") return false;
+          } else if (target === "accessory" || target === "aksesoris") {
+            if (pType !== "accessory" && pType !== "aksesoris") return false;
+          } else {
+            if (pType !== target) return false;
+          }
+        }
 
         // 2. Status Dropdown Filter
         if (
@@ -557,6 +584,15 @@ export function ProductsClient({
     return grs.map((g) => ({ label: g, value: g }));
   }, [activeProducts]);
 
+  const completenessOptions = useMemo(() => {
+    const comps = Array.from(
+      new Set(
+        activeProducts.map((p) => p.completeness).filter(Boolean) as string[],
+      ),
+    ).sort();
+    return comps.map((c) => ({ label: c, value: c }));
+  }, [activeProducts]);
+
   const statusOptions = [
     { label: "Ready", value: "ready" },
     { label: "Terjual", value: "sold" },
@@ -660,27 +696,29 @@ export function ProductsClient({
           </h2>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Link ke Cetak Barcode SKU */}
-          <Link href="/products/barcode">
-            <Button
-              variant="outline"
-              className="gap-2 rounded-xl border-primary/40 text-primary hover:bg-primary/10 font-semibold"
-            >
-              <Printer className="h-4 w-4" />
-              <span>Cetak Barcode SKU</span>
-            </Button>
-          </Link>
+        {!isCashier && (
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Link ke Cetak Barcode SKU */}
+            <Link href="/products/barcode">
+              <Button
+                variant="outline"
+                className="gap-2 rounded-xl border-primary/40 text-primary hover:bg-primary/10 font-semibold"
+              >
+                <Printer className="h-4 w-4" />
+                <span>Cetak Barcode SKU</span>
+              </Button>
+            </Link>
 
-          {/* Tombol Tambah Produk */}
-          <Button
-            onClick={handleOpenAdd}
-            className="bg-primary text-primary-foreground font-semibold rounded-xl gap-2 shadow-md shadow-primary/20"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Tambah Produk</span>
-          </Button>
-        </div>
+            {/* Tombol Tambah Produk */}
+            <Button
+              onClick={handleOpenAdd}
+              className="bg-primary text-primary-foreground font-semibold rounded-xl gap-2 shadow-md shadow-primary/20"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Tambah Produk</span>
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Alert Banner untuk Owner jika ada unit menunggu persetujuan */}
@@ -750,15 +788,21 @@ export function ProductsClient({
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="h-8 pl-3 pr-8 text-xs font-medium rounded-xl bg-background border border-border text-foreground shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/20 appearance-none cursor-pointer hover:border-primary/40 transition"
               >
-                <option value="all">Semua Status ({countAll})</option>
-                <option value="ready">Ready ({countReady})</option>
-                <option value="sold">Terjual ({countSold})</option>
-                <option value="menunggu_persetujuan">
-                  Menunggu Persetujuan ({countPending})
-                </option>
-                <option value="ditolak">
-                  Ditolak ({countRejected})
-                </option>
+                {isCashier ? (
+                  <option value="all">Ready ({countReady})</option>
+                ) : (
+                  <>
+                    <option value="all">Semua Status ({countAll})</option>
+                    <option value="ready">Ready ({countReady})</option>
+                    <option value="sold">Terjual ({countSold})</option>
+                    <option value="menunggu_persetujuan">
+                      Menunggu Persetujuan ({countPending})
+                    </option>
+                    <option value="ditolak">
+                      Ditolak ({countRejected})
+                    </option>
+                  </>
+                )}
               </select>
               <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground">
                 <ChevronDown className="h-3.5 w-3.5" />
@@ -790,11 +834,11 @@ export function ProductsClient({
 
         {/* Filter Bar: Jenis Tipe & Search & Reset */}
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-          <div className="flex items-center bg-muted/60 rounded-xl p-0.5 border border-border text-xs">
+          <div className="flex items-center bg-muted/60 rounded-xl p-0.5 border border-border text-xs overflow-x-auto max-w-full">
             <button
               type="button"
               onClick={() => setProductTypeFilter("all")}
-              className={`px-2.5 py-1.5 rounded-lg font-medium transition ${
+              className={`px-2.5 py-1.5 rounded-lg font-medium transition shrink-0 ${
                 productTypeFilter === "all"
                   ? "bg-background text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -802,30 +846,27 @@ export function ProductsClient({
             >
               Semua
             </button>
-            <button
-              type="button"
-              onClick={() => setProductTypeFilter("phone")}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium transition ${
-                productTypeFilter === "phone"
-                  ? "bg-background text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Smartphone className="h-3 w-3" />
-              <span>HP</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setProductTypeFilter("accessory")}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium transition ${
-                productTypeFilter === "accessory"
-                  ? "bg-background text-foreground shadow-xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Headphones className="h-3 w-3" />
-              <span>Aksesoris</span>
-            </button>
+            {activeCatalogs.map((cat) => {
+              const isSelected =
+                productTypeFilter.toLowerCase() === cat.code.toLowerCase() ||
+                (productTypeFilter === "phone" && cat.code === "handphone") ||
+                (productTypeFilter === "accessory" && cat.code === "aksesoris");
+              return (
+                <button
+                  key={cat.id || cat.code}
+                  type="button"
+                  onClick={() => setProductTypeFilter(cat.code)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-medium transition shrink-0 ${
+                    isSelected
+                      ? "bg-background text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {getCategoryIcon(cat.code)}
+                  <span>{cat.name}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="relative flex-1 sm:w-60">
@@ -853,11 +894,8 @@ export function ProductsClient({
         </div>
       </div>
 
-      {/* Tabel produk terpadu untuk phone dan aksesoris */}
-      {(productTypeFilter === "phone" ||
-        productTypeFilter === "all" ||
-        productTypeFilter === "accessory") && (
-        <div className="space-y-4">
+      {/* Tabel produk terpadu */}
+      <div className="space-y-4">
           {/* Desktop Table View */}
           <div className="hidden md:block rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
             <Table>
@@ -904,35 +942,33 @@ export function ProductsClient({
                       }
                     />
                   </TableHead>
-                  {!isWarehouse && (
-                    <TableHead className="text-xs font-semibold whitespace-nowrap">
-                      <TableColumnFilter
-                        title="Grade"
-                        textFilterValue={colFilters.grade}
-                        onTextFilterChange={(value) =>
-                          setColFilters((prev) => ({ ...prev, grade: value }))
-                        }
-                        options={gradeOptions}
-                        selectedOptions={colFilters.grade ? [colFilters.grade] : []}
-                        onOptionToggle={(value) =>
-                          setColFilters((prev) => ({
-                            ...prev,
-                            grade: prev.grade === value ? "" : value,
-                          }))
-                        }
-                        sortType="text"
-                        sortDirection={
-                          sortConfig.column === "grade"
-                            ? sortConfig.direction
-                            : null
-                        }
-                        onSort={(direction) => handleSort("grade", direction)}
-                        onReset={() =>
-                          setColFilters((prev) => ({ ...prev, grade: "" }))
-                        }
-                      />
-                    </TableHead>
-                  )}
+                  <TableHead className="text-xs font-semibold whitespace-nowrap">
+                    <TableColumnFilter
+                      title="Grade"
+                      textFilterValue={colFilters.grade}
+                      onTextFilterChange={(value) =>
+                        setColFilters((prev) => ({ ...prev, grade: value }))
+                      }
+                      options={gradeOptions}
+                      selectedOptions={colFilters.grade ? [colFilters.grade] : []}
+                      onOptionToggle={(value) =>
+                        setColFilters((prev) => ({
+                          ...prev,
+                          grade: prev.grade === value ? "" : value,
+                        }))
+                      }
+                      sortType="text"
+                      sortDirection={
+                        sortConfig.column === "grade"
+                          ? sortConfig.direction
+                          : null
+                      }
+                      onSort={(direction) => handleSort("grade", direction)}
+                      onReset={() =>
+                        setColFilters((prev) => ({ ...prev, grade: "" }))
+                      }
+                    />
+                  </TableHead>
                   <TableHead className="text-xs font-semibold whitespace-nowrap">
                     <TableColumnFilter
                       title="Kapasitas"
@@ -969,7 +1005,21 @@ export function ProductsClient({
                           completeness: value,
                         }))
                       }
-                      textFilterPlaceholder="Cari kelengkapan..."
+                      options={completenessOptions}
+                      selectedOptions={colFilters.completeness ? [colFilters.completeness] : []}
+                      onOptionToggle={(value) =>
+                        setColFilters((prev) => ({
+                          ...prev,
+                          completeness: prev.completeness === value ? "" : value,
+                        }))
+                      }
+                      sortType="text"
+                      sortDirection={
+                        sortConfig.column === "completeness"
+                          ? sortConfig.direction
+                          : null
+                      }
+                      onSort={(direction) => handleSort("completeness", direction)}
                       onReset={() =>
                         setColFilters((prev) => ({ ...prev, completeness: "" }))
                       }
@@ -977,7 +1027,7 @@ export function ProductsClient({
                   </TableHead>
                   <TableHead className="text-xs font-semibold whitespace-nowrap">
                     <TableColumnFilter
-                      title="Retail (Supplier)"
+                      title="Supplier"
                       textFilterValue={colFilters.retailSupplier}
                       onTextFilterChange={(value) =>
                         setColFilters((prev) => ({
@@ -985,7 +1035,21 @@ export function ProductsClient({
                           retailSupplier: value,
                         }))
                       }
-                      textFilterPlaceholder="Cari supplier..."
+                      options={supplierOptions}
+                      selectedOptions={colFilters.retailSupplier ? [colFilters.retailSupplier] : []}
+                      onOptionToggle={(value) =>
+                        setColFilters((prev) => ({
+                          ...prev,
+                          retailSupplier: prev.retailSupplier === value ? "" : value,
+                        }))
+                      }
+                      sortType="text"
+                      sortDirection={
+                        sortConfig.column === "retailSupplier"
+                          ? sortConfig.direction
+                          : null
+                      }
+                      onSort={(direction) => handleSort("retailSupplier", direction)}
                       onReset={() =>
                         setColFilters((prev) => ({
                           ...prev,
@@ -994,7 +1058,7 @@ export function ProductsClient({
                       }
                     />
                   </TableHead>
-                  {!isWarehouse && (
+                  {isOwner && (
                     <TableHead className="text-xs font-semibold text-right whitespace-nowrap">
                       <TableColumnFilter
                         title="HPP (Modal)"
@@ -1111,28 +1175,26 @@ export function ProductsClient({
                       </TableCell>
 
                       {/* Grade */}
-                      {!isWarehouse && (
-                        <TableCell className="whitespace-nowrap">
-                          {p.grade ? (
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] font-semibold border ${
-                                p.grade.toLowerCase().includes("a") ||
-                                p.grade.toLowerCase().includes("new") ||
-                                p.grade.toLowerCase().includes("bnib")
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300"
-                                  : p.grade.toLowerCase().includes("b")
-                                    ? "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/40 dark:text-blue-300"
-                                    : "bg-zinc-100 text-zinc-700 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-300"
-                              }`}
-                            >
-                              {p.grade}
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">-</span>
-                          )}
-                        </TableCell>
-                      )}
+                      <TableCell className="whitespace-nowrap">
+                        {p.grade ? (
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] font-semibold border ${
+                              p.grade.toLowerCase().includes("a") ||
+                              p.grade.toLowerCase().includes("new") ||
+                              p.grade.toLowerCase().includes("bnib")
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                : p.grade.toLowerCase().includes("b")
+                                  ? "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/40 dark:text-blue-300"
+                                  : "bg-zinc-100 text-zinc-700 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-300"
+                            }`}
+                          >
+                            {p.grade}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">-</span>
+                        )}
+                      </TableCell>
 
                       {/* Kapasitas */}
                       <TableCell className="whitespace-nowrap">
@@ -1165,18 +1227,12 @@ export function ProductsClient({
                       </TableCell>
 
                       {/* HPP (Harga Modal) */}
-                      {!isWarehouse && (
+                      {isOwner && (
                         <TableCell className="text-right whitespace-nowrap font-mono text-xs">
-                          {isSuperAdmin ? (
-                            p.purchasePrice ? (
-                              formatRupiah(p.purchasePrice)
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )
+                          {p.purchasePrice ? (
+                            formatRupiah(p.purchasePrice)
                           ) : (
-                            <span className="text-muted-foreground tracking-widest">
-                              ••••••
-                            </span>
+                            <span className="text-muted-foreground">-</span>
                           )}
                         </TableCell>
                       )}
@@ -1268,20 +1324,51 @@ export function ProductsClient({
                       {/* Aksi */}
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {isWarehouse ? (
-                            p.status === "ditolak" ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 gap-1 rounded-lg"
-                                onClick={() => handleOpenEdit(p)}
-                                title="Perbaiki data produk yang ditolak"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                                <span>Perbaiki</span>
-                              </Button>
+                          {isCashier ? (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          ) : isWarehouse ? (
+                            (p.status === "menunggu_persetujuan" || p.status === "ditolak" || p.createdBy === currentUserId) ? (
+                              p.status === "ditolak" ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 gap-1 rounded-lg"
+                                  onClick={() => handleOpenEdit(p)}
+                                  title="Perbaiki data produk yang ditolak"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  <span>Perbaiki</span>
+                                </Button>
+                              ) : p.status === "menunggu_persetujuan" ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 gap-1 rounded-lg"
+                                  onClick={() => handleOpenEdit(p)}
+                                  title="Edit data produk yang masih menunggu persetujuan"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                  <span>Edit</span>
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:text-indigo-600 gap-1 rounded-lg"
+                                  onClick={() => handleOpenEdit(p)}
+                                  title="Edit data produk yang Anda input"
+                                >
+                                  <Pencil className="h-3.5 w-3.5 text-slate-500" />
+                                  <span>Edit</span>
+                                </Button>
+                              )
                             ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
+                              <span
+                                className="text-xs text-muted-foreground/50 cursor-not-allowed select-none"
+                                title="Hanya staf penginput atau barang menunggu persetujuan yang dapat diedit"
+                              >
+                                -
+                              </span>
                             )
                           ) : p.status === "menunggu_persetujuan" ? (
                             <>
@@ -1450,7 +1537,7 @@ export function ProductsClient({
                           {p.color}
                         </Badge>
                       )}
-                      {!isWarehouse && p.grade && (
+                      {p.grade && (
                         <Badge
                           variant="outline"
                           className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300"
@@ -1510,20 +1597,40 @@ export function ProductsClient({
 
                   {/* Thumb-friendly Action Buttons */}
                   <div className="pt-1 flex items-center justify-end gap-1.5">
-                    {isWarehouse ? (
-                      p.status === "ditolak" ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 px-3 text-xs font-bold text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 gap-1.5 rounded-xl w-full"
-                          onClick={() => handleOpenEdit(p)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          <span>Perbaiki Unit</span>
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground py-0.5">-</span>
-                      )
+                    {isCashier ? null : isWarehouse ? (
+                      (p.status === "menunggu_persetujuan" || p.status === "ditolak" || p.createdBy === currentUserId) ? (
+                        p.status === "ditolak" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 text-xs font-bold text-rose-700 dark:text-rose-400 border-rose-300 dark:border-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 gap-1.5 rounded-xl w-full"
+                            onClick={() => handleOpenEdit(p)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span>Perbaiki Unit</span>
+                          </Button>
+                        ) : p.status === "menunggu_persetujuan" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 text-xs font-semibold text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/40 gap-1.5 rounded-xl w-full"
+                            onClick={() => handleOpenEdit(p)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span>Edit Unit (Menunggu Persetujuan)</span>
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 px-3 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-indigo-600 gap-1.5 rounded-xl w-full"
+                            onClick={() => handleOpenEdit(p)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span>Edit Unit</span>
+                          </Button>
+                        )
+                      ) : null
                     ) : p.status === "menunggu_persetujuan" ? (
                       <div className="flex items-center gap-2 w-full">
                         <Button
@@ -1573,7 +1680,6 @@ export function ProductsClient({
             )}
           </div>
         </div>
-    )}
 
       {/* Kolom tabel terpadu di atas dipakai untuk semua jenis produk. */}
       {false && (
@@ -1849,22 +1955,49 @@ export function ProductsClient({
                       {/* Aksi */}
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-primary"
-                            onClick={() => handleOpenEdit(p)}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive"
-                            onClick={() => handleDelete(p)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {isCashier ? (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          ) : isWarehouse ? (
+                            (p.status === "menunggu_persetujuan" || p.status === "ditolak" || p.createdBy === currentUserId) ? (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-primary"
+                                onClick={() => handleOpenEdit(p)}
+                                title="Edit Aksesoris"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : (
+                              <span
+                                className="text-xs text-muted-foreground/50 cursor-not-allowed select-none"
+                                title="Hanya staf penginput atau barang menunggu persetujuan yang dapat diedit"
+                              >
+                                -
+                              </span>
+                            )
+                          ) : (
+                            <>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-primary"
+                                onClick={() => handleOpenEdit(p)}
+                                title="Edit Produk"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-destructive"
+                                onClick={() => handleDelete(p)}
+                                title="Hapus Produk"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1887,7 +2020,8 @@ export function ProductsClient({
         }}
         editingProduct={editingProduct}
         isSuperAdmin={isSuperAdmin}
-        initialType={productTypeFilter === "accessory" ? "accessory" : "phone"}
+        catalogs={activeCatalogs}
+        initialType={productTypeFilter !== "all" ? productTypeFilter : "phone"}
         onSuccess={() => {
           // Re-trigger page refresh or state update
           window.location.reload();
@@ -2046,7 +2180,7 @@ export function ProductsClient({
               <div>
                 <span className="block">Review & Persetujuan Unit Masuk</span>
                 <span className="text-[11px] font-normal text-muted-foreground">
-                  Tetapkan Grade, HPP (Modal), dan Harga Jual untuk menerbitkan produk
+                  Tetapkan HPP (Modal) dan Harga Jual untuk menerbitkan produk
                 </span>
               </div>
             </DialogTitle>
@@ -2078,6 +2212,12 @@ export function ProductsClient({
                     </span>
                   </div>
                   <div>
+                    <span className="text-muted-foreground">Grade Kondisi:</span>{" "}
+                    <span className="font-semibold text-primary">
+                      {productToApprove.grade || "-"}
+                    </span>
+                  </div>
+                  <div>
                     <span className="text-muted-foreground">Kelengkapan:</span>{" "}
                     <span className="font-medium text-foreground">
                       {productToApprove.completeness || "Fullset"}
@@ -2100,37 +2240,6 @@ export function ProductsClient({
 
               {/* Form Input dari Owner */}
               <div className="space-y-3.5">
-                {/* Grade */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-foreground flex items-center justify-between">
-                    <span>Grade Unit *</span>
-                    <span className="text-[10px] text-muted-foreground font-normal">
-                      Pilih preset atau ketik manual
-                    </span>
-                  </label>
-                  <div className="flex flex-wrap gap-1.5 mb-1.5">
-                    {["Grade A", "Grade B", "Grade C", "Like New", "Baru / BNIB", "OKE"].map((gr) => (
-                      <button
-                        key={gr}
-                        type="button"
-                        onClick={() => setApprovalGrade(gr)}
-                        className={`px-2.5 py-1 text-xs rounded-lg border font-medium transition ${
-                          approvalGrade === gr
-                            ? "bg-primary text-primary-foreground border-primary font-bold shadow-xs"
-                            : "bg-background border-border text-foreground hover:border-primary/50"
-                        }`}
-                      >
-                        {gr}
-                      </button>
-                    ))}
-                  </div>
-                  <Input
-                    value={approvalGrade}
-                    onChange={(e) => setApprovalGrade(e.target.value)}
-                    placeholder="Contoh: Grade A / BNIB"
-                    className="text-xs h-9 rounded-xl"
-                  />
-                </div>
 
                 {/* HPP & Harga Jual */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

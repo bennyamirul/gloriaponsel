@@ -1,5 +1,6 @@
 import { requireRole, getCurrentUser } from "@/lib/auth";
 import { getUsers } from "@/lib/actions/user.actions";
+import { getRoles } from "@/lib/actions/role.actions";
 import { UsersClient } from "@/components/users/users-client";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function UsersPage() {
   await requireRole(["owner", "super_admin"]);
   const currentUser = await getCurrentUser();
-  const users = await getUsers();
+  const [users, roles] = await Promise.all([getUsers(), getRoles()]);
 
   return (
     <div className="space-y-6">
@@ -20,7 +21,11 @@ export default async function UsersPage() {
         </p>
       </div>
 
-      <UsersClient initialUsers={users} currentUserId={currentUser?.id} />
+      <UsersClient
+        initialUsers={users}
+        roles={roles}
+        currentUserId={currentUser?.id}
+      />
     </div>
   );
 }

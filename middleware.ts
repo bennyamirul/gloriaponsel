@@ -7,12 +7,12 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.NEXTAUTH_SECRET || "default-secret-key-for-phone-store-2026-secure"
 );
 
-// Rute yang hanya boleh diakses oleh Super Admin
+// Rute yang hanya boleh diakses oleh Super Admin / Owner
 const SUPER_ADMIN_ONLY_ROUTES = [
   "/users",
+  "/roles",
   "/settings",
   "/reports",
-  "/products",
   "/categories",
   "/brands",
   "/suppliers",
@@ -22,6 +22,8 @@ const SUPER_ADMIN_ONLY_ROUTES = [
 const PROTECTED_ROUTES = [
   "/dashboard",
   "/products",
+  "/catalogs",
+  "/roles",
   "/sales",
   "/stock",
   "/reports",
@@ -80,10 +82,11 @@ export async function middleware(request: NextRequest) {
 
     if (!isOwner) {
       if (isWarehouse) {
-        // Staff Admin (Staff Gudang) diizinkan mengakses: /dashboard, /products, /stock, /sales/history, /profile
+        // Staff Admin (Staff Gudang) diizinkan mengakses: /dashboard, /products, /catalogs, /stock, /sales/history, /profile
         const isAllowedForWarehouse =
           pathname.startsWith("/dashboard") ||
           pathname.startsWith("/products") ||
+          pathname.startsWith("/catalogs") ||
           pathname.startsWith("/stock") ||
           pathname.startsWith("/sales/history") ||
           pathname.startsWith("/profile");
@@ -94,9 +97,10 @@ export async function middleware(request: NextRequest) {
           return NextResponse.redirect(dashboardUrl);
         }
       } else if (isCashier) {
-        // Staff Marketing (Admin Kasir) diizinkan mengakses: /dashboard, /sales, /customers, /profile
+        // Staff Marketing (Admin Kasir) diizinkan mengakses: /dashboard, /products (ready only), /sales, /customers, /profile
         const isAllowedForCashier =
           pathname.startsWith("/dashboard") ||
+          (pathname.startsWith("/products") && !pathname.startsWith("/products/barcode")) ||
           pathname.startsWith("/sales") ||
           pathname.startsWith("/customers") ||
           pathname.startsWith("/profile");

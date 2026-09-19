@@ -256,6 +256,17 @@ export async function getLowStockProducts() {
       stock: { lte: db.product.fields.minStock },
     },
     orderBy: { stock: "asc" },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      variant: true,
+      brandName: true,
+      categoryName: true,
+      stock: true,
+      minStock: true,
+      sellingPrice: true,
+    },
   });
 
   return products.map((p) => ({

@@ -25,6 +25,8 @@ import {
   TrendingUp,
   Wallet,
   Receipt,
+  BookOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +121,12 @@ const navSections: NavSection[] = [
         label: "Data Produk",
         href: "/products",
         icon: Package,
+        roles: ["owner", "staff_gudang", "super_admin", "admin_kasir", "admin"],
+      },
+      {
+        label: "Katalog",
+        href: "/catalogs",
+        icon: BookOpen,
         roles: ["owner", "staff_gudang", "super_admin"],
       },
       {
@@ -136,6 +144,12 @@ const navSections: NavSection[] = [
         label: "Manajemen User",
         href: "/users",
         icon: Users,
+        roles: ["owner", "super_admin"],
+      },
+      {
+        label: "Role & Hak Akses",
+        href: "/roles",
+        icon: ShieldCheck,
         roles: ["owner", "super_admin"],
       },
       {

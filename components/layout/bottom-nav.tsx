@@ -24,6 +24,8 @@ import {
   TrendingUp,
   Wallet,
   Receipt,
+  BookOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -46,6 +48,7 @@ export function BottomNav({ userRole = "super_admin" }: BottomNavProps) {
 
   let mainTabs = [
     { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+    { label: "Produk", href: "/products", icon: Package },
     { label: "Kasir", href: "/sales", icon: ShoppingCart },
   ];
 
@@ -67,6 +70,9 @@ export function BottomNav({ userRole = "super_admin" }: BottomNavProps) {
   const drawerMenuItems = [
     { label: "Riwayat Transaksi", href: "/sales/history", icon: Layers },
     { label: "Pengaturan Profil", href: "/profile", icon: User },
+    ...(isOwner || isWarehouse
+      ? [{ label: "Katalog", href: "/catalogs", icon: BookOpen }]
+      : []),
     ...(isOwner
       ? [
           { label: "Laporan Penjualan", href: "/reports/sales", icon: TrendingUp },
@@ -74,6 +80,7 @@ export function BottomNav({ userRole = "super_admin" }: BottomNavProps) {
           { label: "Laporan Keuangan", href: "/reports/financial", icon: Receipt },
           { label: "Cetak Barcode SKU", href: "/products/barcode", icon: Printer },
           { label: "Manajemen User", href: "/users", icon: Users },
+          { label: "Role & Hak Akses", href: "/roles", icon: ShieldCheck },
           { label: "Pengaturan Toko", href: "/settings", icon: Settings },
         ]
       : []),

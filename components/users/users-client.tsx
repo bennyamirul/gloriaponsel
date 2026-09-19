@@ -40,6 +40,7 @@ import {
   getUserDetailWithSales,
   UserDetailWithSales,
 } from "@/lib/actions/user.actions";
+import type { RoleItem } from "@/lib/actions/role.actions";
 
 interface UserItem {
   id: string;
@@ -47,6 +48,8 @@ interface UserItem {
   name?: string | null;
   email?: string | null;
   role: string;
+  roleId?: string | null;
+  roleName?: string | null;
   isActive: boolean;
   totalSalesCount: number;
   createdAt: string;
@@ -55,10 +58,54 @@ interface UserItem {
 
 interface UsersClientProps {
   initialUsers: UserItem[];
+  roles?: RoleItem[];
   currentUserId?: string;
 }
 
-export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
+const defaultFallbackRoles: RoleItem[] = [
+  {
+    id: "role-owner",
+    name: "Owner",
+    code: "owner",
+    description: "Pemilik toko dengan akses penuh seluruh sistem",
+    permissions: [],
+    userCount: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "role-admin-kasir",
+    name: "Admin Kasir",
+    code: "admin_kasir",
+    description: "Transaksi kasir POS, riwayat penjualan, produk ready & harga jual",
+    permissions: [],
+    userCount: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "role-staff-gudang",
+    name: "Staff Admin",
+    code: "staff_gudang",
+    description: "Input barang masuk, tentukan grade, cetak barcode SKU",
+    permissions: [],
+    userCount: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: "role-staff-keuangan",
+    name: "Staff Keuangan",
+    code: "staff_keuangan",
+    description: "Dashboard finansial, laporan penjualan, pengeluaran & laba",
+    permissions: [],
+    userCount: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+];
+
+export function UsersClient({ initialUsers, roles = [], currentUserId }: UsersClientProps) {
   const [users, setUsers] = useState<UserItem[]>(initialUsers);
   const [search, setSearch] = useState("");
 
@@ -91,12 +138,16 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     }
   };
 
+  const rolesList = roles && roles.length > 0 ? roles : defaultFallbackRoles;
+
   // Form states (Hanya Username, Password, dan Role)
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newRole, setNewRole] = useState<"owner" | "admin_kasir" | "staff_gudang" | "staff_keuangan">("admin_kasir");
+  const [newRole, setNewRole] = useState<string>("admin_kasir");
+  const [newRoleId, setNewRoleId] = useState<string>("role-admin-kasir");
 
   const [selectedRoleTarget, setSelectedRoleTarget] = useState<string>("admin_kasir");
+  const [selectedRoleIdTarget, setSelectedRoleIdTarget] = useState<string>("role-admin-kasir");
   const [resetPasswordInput, setResetPasswordInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -107,14 +158,14 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       (u.email && u.email.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const getRoleBadge = (role: string) => {
+  const getRoleBadge = (role: string, roleName?: string | null) => {
     if (role === "owner" || role === "super_admin") {
       return (
         <Badge
           variant="outline"
           className="border-indigo-300 bg-indigo-50 text-indigo-800 text-[10px] font-bold"
         >
-          Owner
+          {roleName || "Owner"}
         </Badge>
       );
     }
@@ -124,7 +175,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
           variant="outline"
           className="border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-bold"
         >
-          Staff Admin
+          {roleName || "Staff Admin"}
         </Badge>
       );
     }
@@ -134,7 +185,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
           variant="outline"
           className="border-blue-300 bg-blue-50 text-blue-800 text-[10px] font-bold"
         >
-          Staff Keuangan
+          {roleName || "Staff Keuangan"}
         </Badge>
       );
     }
@@ -143,7 +194,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
         variant="outline"
         className="border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px] font-medium"
       >
-        Staff Marketing
+        {roleName || "Admin Kasir"}
       </Badge>
     );
   };
@@ -161,13 +212,15 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
       const res = await createUser({
         username: newUsername.trim(),
         password: newPassword,
-        role: newRole,
+        role: newRole as any,
+        roleId: newRoleId,
       });
 
       if (res.error) {
         toast.error(res.error);
       } else {
         const createdName = newUsername.trim();
+        const matchedRole = rolesList.find((r) => r.id === newRoleId || r.code === newRole);
         toast.success(`Akun ${createdName} berhasil dibuat!`);
         setIsAddOpen(false);
         setNewUsername("");
@@ -180,6 +233,8 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
             name: createdName,
             email: "-",
             role: newRole,
+            roleId: newRoleId,
+            roleName: matchedRole?.name || "Admin Kasir",
             isActive: true,
             totalSalesCount: 0,
             createdAt: new Date().toISOString(),
@@ -224,13 +279,23 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
     if (!roleUser) return;
     setIsLoading(true);
     try {
-      const res = await updateUserRole(roleUser.id, selectedRoleTarget as any);
+      const res = await updateUserRole(roleUser.id, selectedRoleTarget, selectedRoleIdTarget);
       if (res.error) {
         toast.error(res.error);
       } else {
+        const matchedRole = rolesList.find((r) => r.id === selectedRoleIdTarget || r.code === selectedRoleTarget);
         toast.success(`Role ${roleUser.username || roleUser.name} berhasil diubah!`);
         setUsers(
-          users.map((u) => (u.id === roleUser.id ? { ...u, role: selectedRoleTarget } : u))
+          users.map((u) =>
+            u.id === roleUser.id
+              ? {
+                  ...u,
+                  role: selectedRoleTarget,
+                  roleId: selectedRoleIdTarget,
+                  roleName: matchedRole?.name || u.roleName,
+                }
+              : u
+          )
         );
         setRoleUser(null);
       }
@@ -341,7 +406,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                           </div>
                         </td>
                         <td className="py-3 text-center">
-                          {getRoleBadge(u.role)}
+                          {getRoleBadge(u.role, u.roleName)}
                         </td>
                         <td className="py-3 text-center">
                           <Badge
@@ -383,6 +448,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                               onClick={() => {
                                 setRoleUser(u);
                                 setSelectedRoleTarget(u.role);
+                                setSelectedRoleIdTarget(
+                                  u.roleId ||
+                                    rolesList.find((r) => r.code === u.role)?.id ||
+                                    "role-admin-kasir"
+                                );
                               }}
                               className="h-7 px-2 text-[11px]"
                               title="Ubah Role"
@@ -476,7 +546,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
 
                     <div className="flex items-center justify-between text-xs pt-1 border-t border-border/60">
                       <span className="text-muted-foreground">Peran Akses:</span>
-                      {getRoleBadge(u.role)}
+                      {getRoleBadge(u.role, u.roleName)}
                     </div>
 
                     <div className="flex items-center justify-end gap-1 pt-2 border-t border-border/60">
@@ -495,6 +565,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                         onClick={() => {
                           setRoleUser(u);
                           setSelectedRoleTarget(u.role);
+                          setSelectedRoleIdTarget(
+                            u.roleId ||
+                              rolesList.find((r) => r.code === u.role)?.id ||
+                              "role-admin-kasir"
+                          );
                         }}
                         className="h-7 px-2 text-[10px]"
                       >
@@ -572,14 +647,22 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
             <div>
               <label className="text-xs font-semibold text-foreground">Role Hak Akses</label>
               <select
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value as any)}
+                value={newRoleId}
+                onChange={(e) => {
+                  const selectedId = e.target.value;
+                  setNewRoleId(selectedId);
+                  const found = rolesList.find((r) => r.id === selectedId);
+                  if (found) {
+                    setNewRole(found.code);
+                  }
+                }}
                 className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
-                <option value="owner">Owner (Akses Penuh Seluruh Sistem)</option>
-                <option value="admin_kasir">Staff Marketing (Dashboard, Transaksi Kasir POS, Riwayat Transaksi)</option>
-                <option value="staff_gudang">Staff Admin (Dashboard Gudang, Data Produk, Cetak Barcode, Riwayat Cetak Invoice)</option>
-                <option value="staff_keuangan">Staff Keuangan (Dashboard Finansial, Laporan Penjualan, Pengeluaran Harian, Laporan Keuangan)</option>
+                {rolesList.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} {r.description ? `(${r.description.slice(0, 45)}...)` : ""}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -623,14 +706,22 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
             <div>
               <label className="text-xs font-semibold text-foreground">Pilih Role Baru</label>
               <select
-                value={selectedRoleTarget}
-                onChange={(e) => setSelectedRoleTarget(e.target.value)}
+                value={selectedRoleIdTarget}
+                onChange={(e) => {
+                  const selectedId = e.target.value;
+                  setSelectedRoleIdTarget(selectedId);
+                  const found = rolesList.find((r) => r.id === selectedId);
+                  if (found) {
+                    setSelectedRoleTarget(found.code);
+                  }
+                }}
                 className="mt-1 w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
               >
-                <option value="owner">Owner (Akses Penuh Seluruh Sistem)</option>
-                <option value="admin_kasir">Staff Marketing (Dashboard, Transaksi Kasir POS, Riwayat Transaksi)</option>
-                <option value="staff_gudang">Staff Admin (Dashboard Gudang, Data Produk, Cetak Barcode, Riwayat Cetak Invoice)</option>
-                <option value="staff_keuangan">Staff Keuangan (Dashboard Finansial, Laporan Penjualan, Pengeluaran Harian, Laporan Keuangan)</option>
+                {rolesList.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} {r.description ? `(${r.description.slice(0, 45)}...)` : ""}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -779,7 +870,7 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1.5">
-                {getRoleBadge(detailUser?.role || "")}
+                {getRoleBadge(detailUser?.role || "", detailUser?.roleName)}
                 <Badge
                   variant="secondary"
                   className={
@@ -960,6 +1051,11 @@ export function UsersClient({ initialUsers, currentUserId }: UsersClientProps) {
                       if (target) {
                         setRoleUser(target);
                         setSelectedRoleTarget(target.role);
+                        setSelectedRoleIdTarget(
+                          target.roleId ||
+                            rolesList.find((r) => r.code === target.role)?.id ||
+                            "role-admin-kasir"
+                        );
                       }
                     }}
                     className="h-8 text-xs"

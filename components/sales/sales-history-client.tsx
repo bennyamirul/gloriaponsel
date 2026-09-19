@@ -185,7 +185,7 @@ export function SalesHistoryClient({
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="h-9 w-full rounded-lg border border-input bg-background px-3 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="all">Semua Status</option>
               <option value="completed">Selesai</option>
@@ -466,7 +466,7 @@ export function SalesHistoryClient({
                   ) : null}
                   <div className="flex justify-between text-base font-extrabold text-foreground pt-1 border-t border-border">
                     <span>Total Tagihan</span>
-                    <span className="text-indigo-600">
+                    <span className="text-primary font-mono">
                       {formatRupiah(selectedSale.total)}
                     </span>
                   </div>

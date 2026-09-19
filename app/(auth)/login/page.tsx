@@ -136,32 +136,7 @@ function LoginForm() {
 
           <Form {...form}>
             <form
-              method="POST"
-              action={async (formData: FormData) => {
-                setIsLoading(true);
-                setErrorMessage(null);
-                try {
-                  const res = await loginAction(formData);
-                  if (res?.error) {
-                    setErrorMessage(res.error);
-                    toast.error(res.error);
-                  }
-                } catch (err: any) {
-                  if (
-                    err?.message === "NEXT_REDIRECT" ||
-                    err?.digest?.startsWith("NEXT_REDIRECT")
-                  ) {
-                    return;
-                  }
-                  setErrorMessage("Terjadi kesalahan sistem.");
-                } finally {
-                  setIsLoading(false);
-                }
-              }}
-              onSubmit={(e) => {
-                e.preventDefault();
-                form.handleSubmit(onSubmit)(e);
-              }}
+              onSubmit={form.handleSubmit(onSubmit)}
               className="space-y-4"
             >
               <input type="hidden" name="callbackUrl" value={callbackUrl} />

@@ -11,40 +11,63 @@ import {
   ResetPasswordSchema,
 } from "@/lib/validations/user.schema";
 
+function resolveRoleId(roleId?: string | null, roleCode?: string | null): { roleId: string; roleCode: string } {
+  let targetCode = (roleCode || "admin_kasir").toLowerCase();
+  let targetId = roleId || "";
+
+  if (targetId) {
+    if (targetId === "role-owner" || targetId.includes("owner")) targetCode = "owner";
+    else if (targetId === "role-admin-kasir" || targetId.includes("kasir")) targetCode = "admin_kasir";
+    else if (targetId === "role-staff-gudang" || targetId.includes("gudang")) targetCode = "staff_gudang";
+    else if (targetId === "role-staff-keuangan" || targetId.includes("keuangan")) targetCode = "staff_keuangan";
+    else targetCode = "admin_kasir";
+  } else {
+    if (targetCode === "owner" || targetCode === "super_admin") targetId = "role-owner";
+    else if (targetCode === "admin_kasir" || targetCode === "admin") targetId = "role-admin-kasir";
+    else if (targetCode === "staff_gudang") targetId = "role-staff-gudang";
+    else if (targetCode === "staff_keuangan") targetId = "role-staff-keuangan";
+    else targetId = "role-admin-kasir";
+  }
+
+  return { roleId: targetId, roleCode: targetCode };
+}
+
 /**
  * Mengambil seluruh data user (Owner / Super Admin Only)
  */
 export async function getUsers() {
   await requireRole(["owner", "super_admin"]);
 
-  const users = await db.user.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      username: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      updatedAt: true,
-      _count: {
-        select: { sales: true },
-      },
-    },
-  });
+  // Pastikan tabel roles dan kolom role_id siap
+  try {
+    await db.$executeRawUnsafe(`ALTER TABLE \`users\` ADD COLUMN \`role_id\` VARCHAR(191) NULL;`);
+  } catch {}
 
-  return users.map((u) => ({
-    id: u.id,
-    username: u.username || u.email?.split("@")[0] || u.name || "user",
-    name: u.name || u.username || "User",
-    email: u.email || "-",
-    role: u.role,
-    isActive: u.isActive,
-    totalSalesCount: u._count.sales,
-    createdAt: u.createdAt.toISOString(),
-    updatedAt: u.updatedAt.toISOString(),
-  }));
+  const rawUsers = await db.$queryRawUnsafe<any[]>(`
+    SELECT u.id, u.username, u.name, u.email, u.role, u.role_id, u.is_active, u.created_at, u.updated_at,
+           COALESCE(r.name, u.role) as role_name,
+           (SELECT COUNT(*) FROM \`sales\` s WHERE s.cashier_id = u.id) as sales_count
+    FROM \`users\` u
+    LEFT JOIN \`roles\` r ON u.role_id = r.id
+    ORDER BY u.created_at DESC
+  `);
+
+  return rawUsers.map((u) => {
+    const roleInfo = resolveRoleId(u.role_id, u.role);
+    return {
+      id: u.id,
+      username: u.username || u.email?.split("@")[0] || u.name || "user",
+      name: u.name || u.username || "User",
+      email: u.email || "-",
+      role: u.role,
+      roleId: u.role_id || roleInfo.roleId,
+      roleName: u.role_name || (u.role === "owner" ? "Owner" : u.role === "staff_gudang" ? "Staff Admin" : u.role === "staff_keuangan" ? "Staff Keuangan" : "Admin Kasir"),
+      isActive: Boolean(u.is_active),
+      totalSalesCount: Number(u.sales_count || 0),
+      createdAt: new Date(u.created_at).toISOString(),
+      updatedAt: new Date(u.updated_at).toISOString(),
+    };
+  });
 }
 
 /**
@@ -58,8 +81,9 @@ export async function createUser(values: CreateUserFormValues) {
     return { error: validated.error.errors[0]?.message || "Input tidak valid" };
   }
 
-  const { username, password, role } = validated.data;
+  const { username, password, role, roleId } = validated.data;
   const cleanUsername = username.toLowerCase().trim();
+  const roleInfo = resolveRoleId(roleId, role);
 
   try {
     const existing = await db.user.findFirst({
@@ -77,16 +101,24 @@ export async function createUser(values: CreateUserFormValues) {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    await db.user.create({
+    const newUser = await db.user.create({
       data: {
         username: cleanUsername,
         name: cleanUsername,
         email: null,
         passwordHash,
-        role,
+        role: roleInfo.roleCode as any,
         isActive: true,
       },
     });
+
+    try {
+      await db.$executeRawUnsafe(
+        "UPDATE `users` SET `role_id` = ? WHERE `id` = ?",
+        roleInfo.roleId,
+        newUser.id
+      );
+    } catch {}
 
     revalidatePath("/users");
     return { success: true };
@@ -143,14 +175,17 @@ export async function toggleUserStatus(userId: string) {
  */
 export async function updateUserRole(
   userId: string,
-  newRole: "owner" | "admin_kasir" | "staff_gudang" | "super_admin" | "admin" | "staff_keuangan"
+  newRole: string,
+  newRoleId?: string
 ) {
   await requireRole(["owner", "super_admin"]);
 
-  const validated = UpdateUserRoleSchema.safeParse({ userId, role: newRole });
-  if (!validated.success) {
-    return { error: validated.error.errors[0]?.message || "Input tidak valid" };
-  }
+  const roleInfo = resolveRoleId(
+    newRoleId || (newRole.startsWith("role-") ? newRole : null),
+    newRole.startsWith("role-") ? null : newRole
+  );
+  const targetRoleCode = roleInfo.roleCode;
+  const targetRoleId = roleInfo.roleId;
 
   try {
     const targetUser = await db.user.findUnique({ where: { id: userId } });
@@ -159,7 +194,7 @@ export async function updateUserRole(
     }
 
     const isCurrentOwner = targetUser.role === "owner" || targetUser.role === "super_admin";
-    const isNewRoleOwner = newRole === "owner" || newRole === "super_admin";
+    const isNewRoleOwner = targetRoleCode === "owner" || targetRoleCode === "super_admin";
 
     // Proteksi: jika user saat ini adalah owner dan diturunkan role-nya
     if (isCurrentOwner && !isNewRoleOwner) {
@@ -179,8 +214,16 @@ export async function updateUserRole(
 
     await db.user.update({
       where: { id: userId },
-      data: { role: newRole },
+      data: { role: targetRoleCode as any },
     });
+
+    try {
+      await db.$executeRawUnsafe(
+        "UPDATE `users` SET `role_id` = ? WHERE `id` = ?",
+        targetRoleId,
+        userId
+      );
+    } catch {}
 
     revalidatePath("/users");
     return { success: true };

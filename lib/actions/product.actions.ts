@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
-import { db } from "@/lib/db";
+import { db, ensureDbSchema } from "@/lib/db";
 import { requireAuth, requireRole } from "@/lib/auth";
 import {
   ProductSchema,
+  getProductSchema,
   ProductFormValues,
   ApproveProductSchema,
   ApproveProductValues,
@@ -21,10 +22,31 @@ export interface GetProductsParams {
   limit?: number;
 }
 
+function resolveCategoryName(explicitCat?: string | null, productType?: string | null): string {
+  if (explicitCat && explicitCat.trim()) return explicitCat.trim();
+  const pt = (productType || "phone").toLowerCase();
+  if (pt === "phone" || pt === "handphone") return "Handphone";
+  if (pt === "tablet") return "Tablet";
+  if (pt === "smartwatch") return "SmartWatch";
+  if (pt === "accessory" || pt === "aksesoris") return "Aksesoris";
+  return productType || "Handphone";
+}
+
+function resolveCatalogId(explicitId?: string | null, productType?: string | null): string {
+  if (explicitId && explicitId.trim()) return explicitId.trim();
+  const pt = (productType || "phone").toLowerCase();
+  if (pt === "phone" || pt === "handphone") return "cat-phone";
+  if (pt === "tablet") return "cat-tablet";
+  if (pt === "smartwatch") return "cat-smartwatch";
+  if (pt === "accessory" || pt === "aksesoris") return "cat-accessory";
+  return "cat-phone";
+}
+
 export async function getProducts(params?: GetProductsParams) {
   const user = await requireAuth();
   const isOwner = user.role === "owner" || user.role === "super_admin";
   const isWarehouse = user.role === "staff_gudang";
+  const isCashier = user.role === "admin_kasir" || user.role === "admin";
 
   const {
     query,
@@ -57,72 +79,157 @@ export async function getProducts(params?: GetProductsParams) {
     where.productType = productType;
   }
 
-  if (status && status !== "all") {
+  // Admin Kasir hanya bisa melihat produk ready saja
+  if (isCashier) {
+    where.status = "available";
+  } else if (status && status !== "all") {
     where.status = status;
   }
 
-  const [total, rawProducts] = await Promise.all([
-    db.product.count({ where }),
-    db.product.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { createdAt: "desc" },
-      include: {
-        saleItems: {
-          orderBy: { sale: { createdAt: "desc" } },
-          take: 1,
-          select: {
-            warrantyDays: true,
-            warrantyExpiry: true,
-            isReturned: true,
+  try {
+    const [total, rawProducts] = await Promise.all([
+      db.product.count({ where }),
+      db.product.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: "desc" },
+        include: {
+          saleItems: {
+            orderBy: { sale: { createdAt: "desc" } },
+            take: 1,
+            select: {
+              warrantyDays: true,
+              warrantyExpiry: true,
+              isReturned: true,
+            },
           },
         },
-      },
-    }),
-  ]);
+      }),
+    ]);
 
-  const products = rawProducts.map((p) => ({
-    id: p.id,
-    name: p.name,
-    sku: p.sku,
-    imei: p.imei,
-    productType: (p.productType as "phone" | "accessory") || "phone",
-    capacity: p.capacity,
-    color: p.color,
-    completeness: p.completeness,
-    retailSupplier: p.retailSupplier,
-    grade: isWarehouse ? null : ((p as any).grade ?? null),
-    status: p.status || "available",
-    warrantyDays: p.saleItems[0]?.warrantyDays ?? null,
-    warrantyExpiry: p.saleItems[0]?.warrantyExpiry?.toISOString() ?? null,
-    entryDate: p.entryDate
-      ? p.entryDate.toISOString()
-      : p.createdAt.toISOString(),
-    variant: p.variant,
-    brandName: p.brandName || "-",
-    categoryName:
-      p.categoryName ||
-      (p.productType === "phone" ? "Handphone" : "Aksesoris"),
-    sellingPrice: isWarehouse ? 0 : Number(p.sellingPrice),
-    purchasePrice: isOwner ? Number(p.purchasePrice) : null,
-    stock: p.stock,
-    minStock: p.minStock,
-    imageUrl: p.imageUrl,
-    description: p.description,
-    rejectionReason: (p as any).rejectionReason || null,
-    isActive: p.isActive,
-    createdAt: p.createdAt.toISOString(),
-  }));
+    const products = rawProducts.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      imei: p.imei,
+      productType: (p.productType as "phone" | "accessory") || "phone",
+      capacity: p.capacity,
+      color: p.color,
+      completeness: p.completeness,
+      retailSupplier: p.retailSupplier,
+      grade: (p as any).grade ?? null,
+      status: p.status || "available",
+      warrantyDays: p.saleItems[0]?.warrantyDays ?? null,
+      warrantyExpiry: p.saleItems[0]?.warrantyExpiry?.toISOString() ?? null,
+      entryDate: p.entryDate
+        ? p.entryDate.toISOString()
+        : p.createdAt.toISOString(),
+      variant: p.variant,
+      brandName: p.brandName || "-",
+      categoryName: resolveCategoryName(p.categoryName, p.productType),
+      catalogId: (p as any).catalogId || resolveCatalogId((p as any).catalogId, p.productType),
+      sellingPrice: isWarehouse ? 0 : Number(p.sellingPrice),
+      purchasePrice: isOwner ? Number(p.purchasePrice) : null,
+      stock: p.stock,
+      minStock: p.minStock,
+      imageUrl: p.imageUrl,
+      description: p.description,
+      rejectionReason: (p as any).rejectionReason || null,
+      isActive: p.isActive,
+      createdBy: (p as any).createdBy || (p as any).created_by || null,
+      createdAt: p.createdAt.toISOString(),
+    }));
 
-  return {
-    products,
-    total,
-    page,
-    totalPages: Math.ceil(total / limit),
-    isSuperAdmin: isOwner,
-    currentUserRole: user.role,
-  };
+    return {
+      products,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
+      isSuperAdmin: isOwner,
+      currentUserRole: user.role,
+      currentUserId: user.id,
+    };
+  } catch (err) {
+    console.error("getProducts error, attempting ensureDbSchema:", err);
+    await ensureDbSchema();
+    try {
+      const [total, rawProducts] = await Promise.all([
+        db.product.count({ where }),
+        db.product.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: "desc" },
+          include: {
+            saleItems: {
+              orderBy: { sale: { createdAt: "desc" } },
+              take: 1,
+              select: {
+                warrantyDays: true,
+                warrantyExpiry: true,
+                isReturned: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      const products = rawProducts.map((p) => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        imei: p.imei,
+        productType: (p.productType as "phone" | "accessory") || "phone",
+        capacity: p.capacity,
+        color: p.color,
+        completeness: p.completeness,
+        retailSupplier: p.retailSupplier,
+        grade: (p as any).grade ?? null,
+        status: p.status || "available",
+        warrantyDays: p.saleItems[0]?.warrantyDays ?? null,
+        warrantyExpiry: p.saleItems[0]?.warrantyExpiry?.toISOString() ?? null,
+        entryDate: p.entryDate
+          ? p.entryDate.toISOString()
+          : p.createdAt.toISOString(),
+        variant: p.variant,
+        brandName: p.brandName || "-",
+        categoryName: resolveCategoryName(p.categoryName, p.productType),
+        catalogId: (p as any).catalogId || resolveCatalogId((p as any).catalogId, p.productType),
+        sellingPrice: isWarehouse ? 0 : Number(p.sellingPrice),
+        purchasePrice: isOwner ? Number(p.purchasePrice) : null,
+        stock: p.stock,
+        minStock: p.minStock,
+        imageUrl: p.imageUrl,
+        description: p.description,
+        rejectionReason: (p as any).rejectionReason || null,
+        isActive: p.isActive,
+        createdBy: (p as any).createdBy || (p as any).created_by || null,
+        createdAt: p.createdAt.toISOString(),
+      }));
+
+      return {
+        products,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit) || 1,
+        isSuperAdmin: isOwner,
+        currentUserRole: user.role,
+        currentUserId: user.id,
+      };
+    } catch (retryErr) {
+      console.error("Retry getProducts failed:", retryErr);
+      return {
+        products: [],
+        total: 0,
+        page: 1,
+        totalPages: 1,
+        isSuperAdmin: isOwner,
+        currentUserRole: user.role,
+        currentUserId: user.id,
+      };
+    }
+  }
 }
 
 /**
@@ -157,9 +264,8 @@ export async function getProductByImei(identifier: string) {
     grade: (product as any).grade ?? null,
     status: product.status,
     brandName: product.brandName || "-",
-    categoryName:
-      product.categoryName ||
-      (product.productType === "phone" ? "Handphone" : "Aksesoris"),
+    categoryName: resolveCategoryName(product.categoryName, product.productType),
+    catalogId: (product as any).catalogId || resolveCatalogId((product as any).catalogId, product.productType),
     sellingPrice: Number(product.sellingPrice),
     purchasePrice: Number(product.purchasePrice),
     stock: product.stock,
@@ -197,53 +303,186 @@ export async function getAvailableStockForBarcodes(
     ];
   }
 
-  const rawProducts = await db.product.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      sku: true,
-      imei: true,
-      productType: true,
-      capacity: true,
-      color: true,
-      completeness: true,
-      retailSupplier: true,
-      status: true,
-      sellingPrice: true,
-      stock: true,
-      brandName: true,
-      entryDate: true,
-      createdAt: true,
-    },
-  });
+  try {
+    const rawProducts = await db.product.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        imei: true,
+        productType: true,
+        capacity: true,
+        color: true,
+        completeness: true,
+        retailSupplier: true,
+        grade: true,
+        status: true,
+        sellingPrice: true,
+        stock: true,
+        brandName: true,
+        entryDate: true,
+        createdAt: true,
+        isBarcodePrinted: true,
+        barcodePrintedAt: true,
+      },
+    });
 
-  return rawProducts.map((p) => ({
-    id: p.id,
-    name: p.name,
-    sku: p.sku,
-    imei: p.imei || p.sku,
-    productType: p.productType || "phone",
-    capacity: p.capacity,
-    color: p.color,
-    completeness: p.completeness,
-    retailSupplier: p.retailSupplier,
-    status: p.status,
-    sellingPrice: Number(p.sellingPrice),
-    stock: p.stock,
-    brandName: p.brandName || "Gloria Ponsel",
-    entryDate: p.entryDate
-      ? p.entryDate.toISOString()
-      : p.createdAt.toISOString(),
-  }));
+    return rawProducts.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      imei: p.imei || p.sku,
+      productType: (p.productType || "phone") as "phone" | "accessory",
+      capacity: p.capacity,
+      color: p.color,
+      completeness: p.completeness,
+      retailSupplier: p.retailSupplier,
+      grade: (p as any).grade ?? null,
+      status: p.status,
+      sellingPrice: Number(p.sellingPrice),
+      stock: p.stock,
+      brandName: p.brandName || "Gloria Ponsel",
+      entryDate: p.entryDate
+        ? p.entryDate.toISOString()
+        : p.createdAt.toISOString(),
+      isBarcodePrinted: Boolean((p as any).isBarcodePrinted),
+      barcodePrintedAt: (p as any).barcodePrintedAt
+        ? ((p as any).barcodePrintedAt as Date).toISOString()
+        : null,
+    }));
+  } catch (err) {
+    console.warn("Retrying getAvailableStockForBarcodes without barcode print columns:", err);
+    const rawProducts = await db.product.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        imei: true,
+        productType: true,
+        capacity: true,
+        color: true,
+        completeness: true,
+        retailSupplier: true,
+        grade: true,
+        status: true,
+        sellingPrice: true,
+        stock: true,
+        brandName: true,
+        entryDate: true,
+        createdAt: true,
+      },
+    });
+
+    return rawProducts.map((p) => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      imei: p.imei || p.sku,
+      productType: (p.productType || "phone") as "phone" | "accessory",
+      capacity: p.capacity,
+      color: p.color,
+      completeness: p.completeness,
+      retailSupplier: p.retailSupplier,
+      grade: (p as any).grade ?? null,
+      status: p.status,
+      sellingPrice: Number(p.sellingPrice),
+      stock: p.stock,
+      brandName: p.brandName || "Gloria Ponsel",
+      entryDate: p.entryDate
+        ? p.entryDate.toISOString()
+        : p.createdAt.toISOString(),
+      isBarcodePrinted: false,
+      barcodePrintedAt: null,
+    }));
+  }
+}
+
+/**
+ * Menandai produk sebagai telah dicetak barcodenya (masuk ke tab Done Cetak)
+ */
+export async function markProductsBarcodePrinted(productIds: string[]) {
+  await requireAuth();
+  if (!productIds || productIds.length === 0) return { success: true, count: 0 };
+
+  try {
+    const updated = await db.product.updateMany({
+      where: {
+        id: { in: productIds },
+      },
+      data: {
+        isBarcodePrinted: true,
+        barcodePrintedAt: new Date(),
+      },
+    });
+
+    revalidatePath("/products/barcode");
+    revalidatePath("/products");
+    return { success: true, count: updated.count };
+  } catch (error) {
+    console.error("Error markProductsBarcodePrinted:", error);
+    try {
+      const placeholders = productIds.map(() => "?").join(",");
+      await db.$executeRawUnsafe(
+        `UPDATE products SET is_barcode_printed = 1, barcode_printed_at = NOW(3) WHERE id IN (${placeholders})`,
+        ...productIds
+      );
+      revalidatePath("/products/barcode");
+      return { success: true, count: productIds.length };
+    } catch (rawError) {
+      console.error("Fallback error markProductsBarcodePrinted:", rawError);
+      return { success: false, error: "Gagal menyimpan status cetak barcode" };
+    }
+  }
+}
+
+/**
+ * Mengembalikan produk ke status antrean belum dicetak
+ */
+export async function resetProductsBarcodePrinted(productIds: string[]) {
+  await requireAuth();
+  if (!productIds || productIds.length === 0) return { success: true, count: 0 };
+
+  try {
+    const updated = await db.product.updateMany({
+      where: {
+        id: { in: productIds },
+      },
+      data: {
+        isBarcodePrinted: false,
+        barcodePrintedAt: null,
+      },
+    });
+
+    revalidatePath("/products/barcode");
+    revalidatePath("/products");
+    return { success: true, count: updated.count };
+  } catch (error) {
+    console.error("Error resetProductsBarcodePrinted:", error);
+    try {
+      const placeholders = productIds.map(() => "?").join(",");
+      await db.$executeRawUnsafe(
+        `UPDATE products SET is_barcode_printed = 0, barcode_printed_at = NULL WHERE id IN (${placeholders})`,
+        ...productIds
+      );
+      revalidatePath("/products/barcode");
+      return { success: true, count: productIds.length };
+    } catch (rawError) {
+      console.error("Fallback error resetProductsBarcodePrinted:", rawError);
+      return { success: false, error: "Gagal mengembalikan status antrean barcode" };
+    }
+  }
 }
 
 export async function createProduct(values: ProductFormValues) {
   const user = await requireAuth();
+  const isOwner = user.role === "owner" || user.role === "super_admin";
   const isWarehouse = user.role === "staff_gudang";
 
-  const validated = ProductSchema.safeParse(values);
+  const validated = getProductSchema(isOwner).safeParse(values);
   if (!validated.success) {
     return { error: validated.error.errors[0]?.message || "Input tidak valid" };
   }
@@ -253,7 +492,6 @@ export async function createProduct(values: ProductFormValues) {
     data.status = "menunggu_persetujuan";
     data.purchasePrice = 0;
     data.sellingPrice = 0;
-    data.grade = null;
   }
 
   // For Phone, stock is 1 unit per unique IMEI
@@ -311,9 +549,7 @@ export async function createProduct(values: ProductFormValues) {
             status: data.status || "available",
             entryDate,
             brandName: data.brandName || null,
-            categoryName:
-              data.categoryName ||
-              (data.productType === "phone" ? "Handphone" : "Aksesoris"),
+            categoryName: resolveCategoryName(data.categoryName, data.productType),
             variant: data.variant || null,
             purchasePrice: data.purchasePrice,
             sellingPrice: data.sellingPrice,
@@ -343,9 +579,7 @@ export async function createProduct(values: ProductFormValues) {
               status: data.status || "available",
               entryDate,
               brandName: data.brandName || null,
-              categoryName:
-                data.categoryName ||
-                (data.productType === "phone" ? "Handphone" : "Aksesoris"),
+              categoryName: resolveCategoryName(data.categoryName, data.productType),
               variant: data.variant || null,
               purchasePrice: data.purchasePrice,
               sellingPrice: data.sellingPrice,
@@ -362,6 +596,24 @@ export async function createProduct(values: ProductFormValues) {
         } else {
           throw err;
         }
+      }
+
+      const targetCatalogId = resolveCatalogId(data.catalogId, data.productType);
+      try {
+        await tx.$executeRawUnsafe(
+          "UPDATE `products` SET `catalog_id` = ?, `created_by` = ? WHERE `id` = ?",
+          targetCatalogId,
+          user.id,
+          newProduct.id
+        );
+      } catch {
+        try {
+          await tx.$executeRawUnsafe(
+            "UPDATE `products` SET `catalog_id` = ? WHERE `id` = ?",
+            targetCatalogId,
+            newProduct.id
+          );
+        } catch {}
       }
 
       // Automatically record initial incoming stock movement
@@ -420,22 +672,62 @@ export async function updateProduct(id: string, values: ProductFormValues) {
   const isOwner = user.role === "owner" || user.role === "super_admin";
   const isWarehouse = user.role === "staff_gudang";
 
-  const validated = ProductSchema.safeParse(values);
-  if (!validated.success) {
-    return { error: validated.error.errors[0]?.message || "Input tidak valid" };
-  }
-
-  const data = validated.data;
-  const imei = data.productType === "phone" ? data.imei : null;
-
   try {
     const currentProduct = await db.product.findUnique({ where: { id } });
     if (!currentProduct) {
       return { error: "Produk tidak ditemukan." };
     }
 
-    if (isWarehouse && currentProduct.status !== "ditolak") {
-      return { error: "Staff gudang hanya memiliki izin untuk mengedit produk yang ditolak oleh Owner." };
+    // Jika yang mengedit bukan Owner (misal Staff Admin / Gudang), pertahankan harga asli dari database
+    const payloadToValidate = {
+      ...values,
+      purchasePrice: isOwner ? values.purchasePrice : Number(currentProduct.purchasePrice),
+      sellingPrice: isOwner ? values.sellingPrice : Number(currentProduct.sellingPrice),
+    };
+
+    const validated = getProductSchema(isOwner).safeParse(payloadToValidate);
+    if (!validated.success) {
+      return { error: validated.error.errors[0]?.message || "Input tidak valid" };
+    }
+
+    const data = validated.data;
+    const imei = data.productType === "accessory" ? null : (data.imei || null);
+
+    if (isWarehouse) {
+      // 1. Validasi hak edit: Staff Admin dapat mengedit produk yang menunggu persetujuan, ditolak, atau yang diinput sendiri
+      const isPendingOrRejected =
+        currentProduct.status === "menunggu_persetujuan" ||
+        currentProduct.status === "ditolak";
+
+      if (!isPendingOrRejected) {
+        let productCreatorId = (currentProduct as any).createdBy;
+        if (!productCreatorId) {
+          try {
+            const raw = await db.$queryRawUnsafe<any[]>(
+              "SELECT `created_by` FROM `products` WHERE `id` = ? LIMIT 1",
+              id
+            );
+            productCreatorId = raw[0]?.created_by;
+          } catch {}
+        }
+        if (!productCreatorId) {
+          try {
+            const firstMovement = await db.stockMovement.findFirst({
+              where: { productId: id, type: "in" },
+              orderBy: { createdAt: "asc" },
+              select: { createdById: true },
+            });
+            productCreatorId = firstMovement?.createdById;
+          } catch {}
+        }
+
+        if (productCreatorId && productCreatorId !== user.id) {
+          return {
+            error:
+              "Anda hanya memiliki izin untuk mengedit produk yang menunggu persetujuan atau yang Anda input sendiri.",
+          };
+        }
+      }
     }
 
     // Check SKU collision
@@ -464,6 +756,7 @@ export async function updateProduct(id: string, values: ProductFormValues) {
       }
     }
 
+    // 2. Proteksi Harga: Staff Admin TIDAK BISA mengedit HPP (harga beli) dan Harga Jual (hanya Owner)
     const purchasePrice = isOwner
       ? data.purchasePrice
       : currentProduct.purchasePrice;
@@ -481,8 +774,24 @@ export async function updateProduct(id: string, values: ProductFormValues) {
         ? data.grade || null
         : (currentProduct as any).grade;
 
-    const finalStatus = isWarehouse ? "menunggu_persetujuan" : (data.status || currentProduct.status);
-    const finalRejectionReason = isWarehouse ? null : ((currentProduct as any).rejectionReason || null);
+    // 3. Status: jika staff admin mengedit produk yang ditolak, kembalikan ke status menunggu_persetujuan
+    const finalStatus = isWarehouse
+      ? currentProduct.status === "ditolak"
+        ? "menunggu_persetujuan"
+        : currentProduct.status
+      : (data.status || currentProduct.status);
+
+    const finalRejectionReason = isWarehouse
+      ? currentProduct.status === "ditolak"
+        ? null
+        : (currentProduct as any).rejectionReason || null
+      : (data.status === "ditolak" ? (currentProduct as any).rejectionReason || null : null);
+
+    const targetCatalogId = resolveCatalogId(data.catalogId, data.productType);
+    const targetCategoryName = resolveCategoryName(
+      data.categoryName || currentProduct.categoryName,
+      data.productType
+    );
 
     try {
       await db.product.update({
@@ -491,10 +800,11 @@ export async function updateProduct(id: string, values: ProductFormValues) {
           name: data.name,
           sku:
             data.sku ||
-            (data.productType === "phone" ? imei : null) ||
+            imei ||
             currentProduct.sku,
           imei,
           productType: data.productType,
+          catalogId: targetCatalogId,
           capacity: data.capacity || null,
           color: data.color || null,
           completeness: data.completeness || null,
@@ -502,15 +812,11 @@ export async function updateProduct(id: string, values: ProductFormValues) {
           grade: targetGrade,
           entryDate,
           brandName: data.brandName || null,
-          categoryName:
-            data.categoryName ||
-            (data.productType === "phone"
-              ? "Handphone"
-              : currentProduct.categoryName || "Aksesoris"),
+          categoryName: targetCategoryName,
           variant: data.variant || null,
           purchasePrice,
           sellingPrice,
-          stock: data.productType === "phone" ? currentProduct.stock : data.stock,
+          stock: data.productType === "phone" ? (currentProduct.productType === "phone" ? currentProduct.stock : 1) : data.stock,
           minStock: data.minStock,
           imageUrl: data.imageUrl || null,
           description: data.description || null,
@@ -531,25 +837,22 @@ export async function updateProduct(id: string, values: ProductFormValues) {
             name: data.name,
             sku:
               data.sku ||
-              (data.productType === "phone" ? imei : null) ||
+              imei ||
               currentProduct.sku,
             imei,
             productType: data.productType,
+            catalogId: targetCatalogId,
             capacity: data.capacity || null,
             color: data.color || null,
             completeness: data.completeness || null,
             retailSupplier: data.retailSupplier || null,
             entryDate,
             brandName: data.brandName || null,
-            categoryName:
-              data.categoryName ||
-              (data.productType === "phone"
-                ? "Handphone"
-                : currentProduct.categoryName || "Aksesoris"),
+            categoryName: targetCategoryName,
             variant: data.variant || null,
             purchasePrice,
             sellingPrice,
-            stock: data.productType === "phone" ? currentProduct.stock : data.stock,
+            stock: data.productType === "phone" ? (currentProduct.productType === "phone" ? currentProduct.stock : 1) : data.stock,
             minStock: data.minStock,
             imageUrl: data.imageUrl || null,
             description: data.description || null,
@@ -565,6 +868,14 @@ export async function updateProduct(id: string, values: ProductFormValues) {
         throw err;
       }
     }
+
+    try {
+      await db.$executeRawUnsafe(
+        "UPDATE `products` SET `catalog_id` = ? WHERE `id` = ?",
+        targetCatalogId,
+        id
+      );
+    } catch {}
 
     revalidatePath("/products");
     revalidatePath("/stock");
@@ -720,11 +1031,16 @@ export async function approveProduct(id: string, values: ApproveProductValues) {
       return { error: "Produk tidak ditemukan." };
     }
 
+    const finalGrade =
+      grade !== undefined && grade !== null && grade !== ""
+        ? grade
+        : (product as any).grade;
+
     try {
       await db.product.update({
         where: { id },
         data: {
-          grade,
+          grade: finalGrade,
           purchasePrice,
           sellingPrice,
           status: "available",
@@ -739,7 +1055,9 @@ export async function approveProduct(id: string, values: ApproveProductValues) {
           status: "available",
         },
       });
-      await db.$executeRaw`UPDATE products SET grade = ${grade} WHERE id = ${id}::uuid`;
+      if (finalGrade) {
+        await db.$executeRaw`UPDATE products SET grade = ${finalGrade} WHERE id = ${id}`;
+      }
     }
 
     revalidatePath("/products");

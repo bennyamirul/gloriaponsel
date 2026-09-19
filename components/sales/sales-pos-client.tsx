@@ -15,6 +15,9 @@ import {
   Phone,
   Printer,
   Smartphone,
+  Tablet,
+  Watch,
+  Tag,
   Headphones,
   Search,
   X,
@@ -58,14 +61,18 @@ import { getProductByImei } from "@/lib/actions/product.actions";
 import {
   BarcodeScannerModal,
   scanBarcodeFromFile,
+  promptCameraPermission,
 } from "@/components/ui/barcode-scanner-modal";
+import {
+  formatWhatsAppProofCaption,
+} from "@/lib/utils/payment-proof-composer";
 
 export interface PosProductItem {
   id: string;
   name: string;
   sku: string;
   imei?: string | null;
-  productType?: "phone" | "accessory";
+  productType?: string;
   capacity?: string | null;
   color?: string | null;
   completeness?: string | null;
@@ -75,6 +82,24 @@ export interface PosProductItem {
   stock: number;
   brandName?: string | null;
   categoryName?: string | null;
+}
+
+function getCategoryLabel(type?: string): string {
+  const t = (type || "").toLowerCase();
+  if (t === "phone" || t === "handphone") return "HP";
+  if (t === "tablet") return "Tablet";
+  if (t === "smartwatch") return "SmartWatch";
+  if (t === "accessory" || t === "aksesoris") return "Aksesoris";
+  return type || "Produk";
+}
+
+function getCategoryIcon(type?: string) {
+  const t = (type || "").toLowerCase();
+  if (t.includes("phone") || t.includes("hp")) return <Smartphone className="h-4 w-4 text-primary shrink-0" />;
+  if (t.includes("tablet") || t.includes("pad")) return <Tablet className="h-4 w-4 text-blue-500 shrink-0" />;
+  if (t.includes("watch")) return <Watch className="h-4 w-4 text-amber-500 shrink-0" />;
+  if (t.includes("accessory") || t.includes("aksesoris")) return <Headphones className="h-4 w-4 text-muted-foreground shrink-0" />;
+  return <Tag className="h-4 w-4 text-muted-foreground shrink-0" />;
 }
 
 export interface PosCustomerItem {
@@ -168,6 +193,7 @@ export function SalesPosClient({
 
   // State upload bukti pembayaran di POS
   const [isUploadingPosProof, setIsUploadingPosProof] = useState(false);
+  const [posProofPreviewUrl, setPosProofPreviewUrl] = useState<string | null>(null);
   const uploadedProofFileRef = useRef<File | null>(null);
 
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
@@ -253,7 +279,10 @@ export function SalesPosClient({
       return;
     }
 
-    const isPhone = (product.productType || "phone") === "phone";
+    const isSerialized =
+      Boolean(product.imei && product.imei.trim()) ||
+      ((product.productType || "phone") !== "accessory" &&
+        (product.productType || "phone") !== "aksesoris");
 
     setCart((prev) => {
       const existingIdx = prev.findIndex(
@@ -261,9 +290,9 @@ export function SalesPosClient({
       );
 
       if (existingIdx >= 0) {
-        if (isPhone) {
+        if (isSerialized) {
           toast.warning(
-            `Unit HP (IMEI: ${product.imei}) sudah ada dalam daftar transaksi.`,
+            `Unit ${getCategoryLabel(product.productType)} (IMEI: ${product.imei || product.sku}) sudah ada dalam daftar transaksi.`,
           );
           return prev;
         }
@@ -522,6 +551,10 @@ export function SalesPosClient({
 
     try {
       setIsUploadingPosProof(true);
+      const previewUrl = URL.createObjectURL(file);
+      setPosProofPreviewUrl(previewUrl);
+
+      // Pilihan ke-2: Gabungkan foto bukti di atas dan rincian transaksi di bawah
       uploadedProofFileRef.current = file;
       const formData = new FormData();
       formData.append("file", file);
@@ -534,7 +567,8 @@ export function SalesPosClient({
         setCompletedSale((prev) =>
           prev ? { ...prev, paymentProofUrl: res.paymentProofUrl } : null
         );
-        toast.success("Bukti pembayaran berhasil disimpan!");
+
+        toast.success("Foto bukti pembayaran berhasil disimpan!");
         return res.paymentProofUrl;
       }
       return null;
@@ -549,7 +583,6 @@ export function SalesPosClient({
   const handleSendWhatsAppGroup = async () => {
     if (!completedSale) return;
 
-    const messageText = `bukti transaksi [${completedSale.invoiceNo}]`;
     const fullProofUrl = completedSale.paymentProofUrl
       ? completedSale.paymentProofUrl.startsWith("http")
         ? completedSale.paymentProofUrl
@@ -558,13 +591,17 @@ export function SalesPosClient({
 
     let fileToShare = uploadedProofFileRef.current;
 
-    // Jika belum ada file di memori tetapi ada paymentProofUrl, download sebagai file
+    // Jika belum ada file bukti pembayaran sama sekali, ingatkan kasir
+    if (!fileToShare && !fullProofUrl) {
+      toast.error("Silakan pilih atau unggah foto bukti pembayaran terlebih dahulu.");
+      return;
+    }
+
     if (!fileToShare && fullProofUrl) {
       try {
         const res = await fetch(fullProofUrl);
         const blob = await res.blob();
-        const ext = fullProofUrl.split(".").pop()?.split("?")[0] || "jpg";
-        fileToShare = new File([blob], `bukti-${completedSale.invoiceNo}.${ext}`, {
+        fileToShare = new File([blob], `bukti-${completedSale.invoiceNo}.jpg`, {
           type: blob.type || "image/jpeg",
         });
         uploadedProofFileRef.current = fileToShare;
@@ -573,8 +610,34 @@ export function SalesPosClient({
       }
     }
 
-    // 1. Coba gunakan Web Share API (Di HP / Smartphone Android & iOS)
-    // Fitur ini langsung membuka WhatsApp dengan FOTO TERLAMPIR dan TEKS "bukti transaksi [no-faktur]" sebagai caption/keterangan foto (SATU PESAN BERSAMAAN)
+    // Salin rincian transaksi ke clipboard (sebagai cadangan jika kasir butuh teks di tempat lain)
+    const messageCaption = formatWhatsAppProofCaption({
+      invoiceNo: completedSale.invoiceNo,
+      transactionDate: completedSale.createdAt || completedSale.date,
+      cashierName: completedSale.cashierName,
+      customerName: completedSale.customerName,
+      customerPhone: completedSale.customerPhone,
+      total: completedSale.total,
+      items: (completedSale.items || []).map((it: any) => ({
+        productName: it.product?.name || it.productName || it.name || "Produk",
+        productImei: it.product?.imei || it.imei || it.productImei || null,
+        productSku: it.product?.sku || it.sku || it.productSku || null,
+        capacity: it.product?.capacity || it.capacity || null,
+        color: it.product?.color || it.color || null,
+        completeness: it.product?.completeness || it.completeness || null,
+        qty: it.quantity || it.qty || 1,
+      })),
+    });
+
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(messageCaption);
+      } catch {
+        // ignore clipboard error
+      }
+    }
+
+    // Bagikan 1 file gambar komposit (foto di atas, rincian di bawah) via Web Share API di HP
     if (
       fileToShare &&
       typeof navigator !== "undefined" &&
@@ -584,32 +647,47 @@ export function SalesPosClient({
       try {
         await navigator.share({
           files: [fileToShare],
-          title: messageText,
-          text: messageText,
+          title: `Bukti Pembayaran ${completedSale.invoiceNo}`,
+          text: messageCaption,
         });
-        toast.success("Foto dan pesan bukti transaksi berhasil dibagikan ke WhatsApp!");
+        toast.success("Foto bukti transaksi siap dikirim ke WhatsApp!");
         return;
       } catch (err: any) {
         if (err.name === "AbortError") return; // Staf membatalkan dialog share
       }
     }
 
-    // 2. Fallback untuk Desktop atau browser yang tidak mendukung share file:
-    const contentToCopy = fullProofUrl
-      ? `${messageText}\n${fullProofUrl}`
-      : messageText;
-
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(contentToCopy);
-        toast.success("Format pesan bukti transaksi disalin ke clipboard! Membuka grup WhatsApp...");
-      }
-    } catch {
-      // ignore clipboard error
-    }
-
+    // Fallback untuk Desktop atau browser yang tidak mendukung share file:
+    toast.success("Membuka grup WhatsApp...");
     window.open(WA_GROUP_LINK, "_blank");
   };
+
+  const handleSendInvoiceToCustomer = () => {
+    if (!completedSale) return;
+    if (!completedSale.customerPhone) {
+      toast.error("Nomor WhatsApp pelanggan tidak tersedia untuk transaksi ini.");
+      return;
+    }
+
+    let phone = completedSale.customerPhone.trim().replace(/\D/g, "");
+    if (phone.startsWith("0")) {
+      phone = "62" + phone.slice(1);
+    } else if (phone.startsWith("8")) {
+      phone = "62" + phone;
+    }
+
+    const rawName = completedSale.customerName?.trim() || "Pelanggan";
+    const formattedName = rawName.toLowerCase().startsWith("kak ")
+      ? rawName.slice(4).trim()
+      : rawName;
+
+    const message = `Terimakasih Kak ${formattedName} telah belanja di gloria ponsel bekasi.\n\nSimpan bukti pembayaran ini untuk klaim garansi ya ka\n\nApabila ada pertanyaan lain bisa kontak admin langsung di 081219172792.`;
+    const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+
+    toast.success("Membuka WhatsApp pelanggan...");
+    window.open(waUrl, "_blank");
+  };
+
 
   // Manual search filtered list
   const manualFilteredProducts = products.filter((p) => {
@@ -1018,21 +1096,12 @@ export function SalesPosClient({
                               <span className="text-xs font-bold text-foreground">
                                 {p.name}
                               </span>
-                              {p.productType === "phone" ? (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] h-4 py-0 px-1 border-primary/30 text-primary"
-                                >
-                                  HP
-                                </Badge>
-                              ) : (
-                                <Badge
-                                  variant="outline"
-                                  className="text-[10px] h-4 py-0 px-1 border-muted-foreground/30 text-muted-foreground"
-                                >
-                                  Aksesoris
-                                </Badge>
-                              )}
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] h-4 py-0 px-1.5 border-primary/30 text-primary font-medium"
+                              >
+                                {getCategoryLabel(p.productType)}
+                              </Badge>
                             </div>
                             <p className="text-[11px] text-muted-foreground font-mono">
                               {p.imei ? `IMEI: ${p.imei}` : `SKU: ${p.sku}`}
@@ -1076,7 +1145,10 @@ export function SalesPosClient({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsCameraScannerOpen(true)}
+                onClick={() => {
+                  promptCameraPermission();
+                  setIsCameraScannerOpen(true);
+                }}
                 className="h-12 px-3 sm:px-4 rounded-xl border-primary/30 text-primary hover:bg-primary/10 font-bold gap-2"
                 title="Buka Kamera Scanner Modal"
               >
@@ -1191,8 +1263,10 @@ export function SalesPosClient({
                 </TableRow>
               ) : (
                 cart.map((item, idx) => {
-                  const isPhone =
-                    (item.product.productType || "phone") === "phone";
+                  const isSerialized =
+                    Boolean(item.product.imei && item.product.imei.trim()) ||
+                    ((item.product.productType || "phone") !== "accessory" &&
+                      (item.product.productType || "phone") !== "aksesoris");
                   const itemSubtotal = item.product.sellingPrice * item.qty;
 
                   return (
@@ -1214,11 +1288,7 @@ export function SalesPosClient({
                       {/* Nama Produk & Detail */}
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          {isPhone ? (
-                            <Smartphone className="h-4 w-4 text-primary shrink-0" />
-                          ) : (
-                            <Headphones className="h-4 w-4 text-muted-foreground shrink-0" />
-                          )}
+                          {getCategoryIcon(item.product.productType)}
                           <div>
                             <p className="font-bold text-foreground text-xs leading-snug">
                               {item.product.name}
@@ -1244,7 +1314,7 @@ export function SalesPosClient({
 
                       {/* Qty Controls */}
                       <TableCell className="text-center">
-                        {isPhone ? (
+                        {isSerialized ? (
                           <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-muted">
                             1 Unit
                           </span>
@@ -1728,7 +1798,7 @@ export function SalesPosClient({
               <div className="rounded-xl border border-border p-3.5 space-y-2.5 bg-card">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
-                    <UploadCloud className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <UploadCloud className="w-4 h-4 text-primary dark:text-teal-400" />
                     Upload Bukti Pembayaran
                   </span>
                   {completedSale.paymentProofUrl ? (
@@ -1743,28 +1813,48 @@ export function SalesPosClient({
                 </div>
 
                 {isUploadingPosProof ? (
-                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-xs text-indigo-700 dark:text-indigo-300">
-                    <Loader2 className="w-4 h-4 animate-spin shrink-0 text-indigo-600" />
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 text-xs text-[#055B5A] dark:text-teal-300">
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0 text-primary" />
                     <span className="font-medium">Sedang mengunggah dan menyimpan bukti pembayaran...</span>
                   </div>
                 ) : completedSale.paymentProofUrl ? (
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs">
-                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span>Bukti pembayaran berhasil tersimpan</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs">
+                      <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span>Bukti pembayaran berhasil tersimpan & menyatu</span>
+                      </div>
+                      <label className="text-[11px] text-primary dark:text-teal-400 hover:underline font-semibold cursor-pointer shrink-0">
+                        <span>Ganti Foto</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleAutoUploadProof(f);
+                          }}
+                          className="hidden"
+                        />
+                      </label>
                     </div>
-                    <label className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer shrink-0">
-                      <span>Ganti Foto</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) handleAutoUploadProof(f);
-                        }}
-                        className="hidden"
+
+                    {/* Preview gambar komposit */}
+                    <div className="relative rounded-xl overflow-hidden border border-border bg-black/5 dark:bg-black/40 max-h-48 flex items-center justify-center">
+                      <img
+                        src={completedSale.paymentProofUrl}
+                        alt="Bukti Pembayaran"
+                        className="w-full h-auto max-h-48 object-contain"
                       />
-                    </label>
+                      <a
+                        href={completedSale.paymentProofUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg backdrop-blur-sm text-[10px] flex items-center gap-1 font-medium"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Buka Penuh</span>
+                      </a>
+                    </div>
                   </div>
                 ) : (
                   <div>
@@ -1780,17 +1870,44 @@ export function SalesPosClient({
                         file:mr-2.5 file:py-2 file:px-3
                         file:rounded-lg file:border-0
                         file:text-xs file:font-semibold
-                        file:bg-indigo-50 file:text-indigo-700
-                        hover:file:bg-indigo-100
-                        dark:file:bg-indigo-950 dark:file:text-indigo-300
+                        file:bg-teal-50 file:text-[#055B5A]
+                        hover:file:bg-teal-100
+                        dark:file:bg-teal-950 dark:file:text-teal-300
                         cursor-pointer border border-border rounded-xl p-1 bg-muted/20"
                     />
                     <p className="text-[10px] text-muted-foreground mt-1 px-1">
-                      Pilih file atau ambil dari kamera. Foto langsung otomatis tersimpan ke sistem.
+                      Pilih file atau ambil dari kamera. Rincian transaksi akan dikirim sebagai caption foto di WhatsApp.
                     </p>
                   </div>
                 )}
               </div>
+
+
+              {/* Kirim Invoice ke WhatsApp Pelanggan */}
+              {completedSale.customerPhone && (
+                <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/20 p-3.5 space-y-2.5">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-semibold flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
+                      <MessageSquare className="w-4 h-4 text-[#25D366]" />
+                      Kirim Pesan & Invoice ke Pelanggan
+                    </span>
+                    <p className="text-[11px] text-muted-foreground">
+                      Kirim pesan terima kasih & klaim garansi langsung ke no.{" "}
+                      <span className="font-mono text-foreground font-semibold">
+                        {completedSale.customerPhone}
+                      </span>
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleSendInvoiceToCustomer}
+                    className="w-full bg-[#25D366] hover:bg-[#20bd5a] text-white font-bold text-xs h-10 gap-2 shadow-xs cursor-pointer"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Kirim ke WhatsApp Pelanggan</span>
+                  </Button>
+                </div>
+              )}
 
               {/* Kirim Bukti Transaksi ke Grup WhatsApp */}
               <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 p-3.5 space-y-2.5">
@@ -1800,7 +1917,7 @@ export function SalesPosClient({
                     Kirim Bukti ke Grup WhatsApp
                   </span>
                   <p className="text-[11px] text-muted-foreground">
-                    Pesan otomatis: <span className="font-mono text-foreground font-semibold">bukti transaksi [{completedSale.invoiceNo}]</span>
+                    Format: <span className="font-mono text-foreground font-semibold">Bukti Pembayaran [{completedSale.invoiceNo}]</span>
                   </p>
                 </div>
                 <Button
@@ -1812,8 +1929,8 @@ export function SalesPosClient({
                   <MessageSquare className="w-4 h-4" />
                   <span>Kirim Bukti ke Grup WhatsApp</span>
                 </Button>
-                <p className="text-[10px] text-emerald-800/80 dark:text-emerald-300/80 text-center">
-                  Format pesan otomatis disalin ke clipboard dan Anda langsung diarahkan ke Grup WhatsApp.
+                <p className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium text-center bg-white/70 dark:bg-black/30 p-2 rounded-lg border border-emerald-300/50">
+                  💡 <strong>Foto Asli & Caption WhatsApp:</strong> Foto bukti pembayaran diunggah bersih tanpa watermark. Rincian transaksi otomatis tersalin dan dikirim sebagai caption teks.
                 </p>
               </div>
             </div>
@@ -1955,25 +2072,28 @@ export function SalesPosClient({
                     <div className="text-center font-bold text-slate-900 dark:text-zinc-100">
                       <span>{completedSale.invoiceNo}</span>
                     </div>
-                    <table className="w-full border-collapse pt-0.5" style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <tbody>
-                        <tr>
-                          <td className="align-top text-left text-[8.5px] text-slate-600 dark:text-zinc-400 p-0 whitespace-nowrap">
-                            Kasir: {cleanCashierName(completedSale.cashierName)}
-                          </td>
-                          <td className="align-top text-right text-[8.5px] text-slate-600 dark:text-zinc-400 p-0 pl-1 whitespace-nowrap">
-                            Pelanggan: {completedSale.customerName || "Pelanggan Umum"}
-                          </td>
-                        </tr>
-                        {completedSale.customerPhone && (
-                          <tr>
-                            <td colSpan={2} className="text-right text-[8px] text-slate-500 dark:text-zinc-400 p-0 pt-0.5 whitespace-nowrap">
-                              {completedSale.customerPhone}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                    <div className="pt-0.5 space-y-0.5 text-[8.5px]">
+                      <div className="flex justify-between items-start">
+                        <span className="text-slate-600 dark:text-zinc-400 whitespace-nowrap">Kasir:</span>
+                        <span className="text-right font-medium text-slate-900 dark:text-zinc-100 break-words pl-2">
+                          {cleanCashierName(completedSale.cashierName)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-start">
+                        <span className="text-slate-600 dark:text-zinc-400 whitespace-nowrap">Pelanggan:</span>
+                        <span className="text-right font-medium text-slate-900 dark:text-zinc-100 break-words pl-2">
+                          {completedSale.customerName || "Pelanggan Umum"}
+                        </span>
+                      </div>
+                      {completedSale.customerPhone && (
+                        <div className="flex justify-between items-start">
+                          <span className="text-slate-600 dark:text-zinc-400 whitespace-nowrap">No. Telp:</span>
+                          <span className="text-right font-mono text-slate-700 dark:text-zinc-300 break-words pl-2">
+                            {completedSale.customerPhone}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Rincian Item Thermal (Format Identik Preview Pengaturan Toko) */}
