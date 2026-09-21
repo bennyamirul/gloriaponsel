@@ -10,6 +10,9 @@ import {
   Square,
   Smartphone,
   Headphones,
+  Tablet,
+  Watch,
+  Tag,
   Sliders,
   Download,
   Info,
@@ -31,13 +34,16 @@ import {
   markProductsBarcodePrinted,
   resetProductsBarcodePrinted,
 } from "@/lib/actions/product.actions";
+import { CatalogItem } from "@/lib/actions/catalog.actions";
 
 export interface StockItemForBarcode {
   id: string;
   name: string;
   sku: string;
   imei: string;
-  productType: "phone" | "accessory";
+  productType: "phone" | "accessory" | "tablet" | "smartwatch" | string;
+  catalogId?: string | null;
+  categoryName?: string | null;
   capacity?: string | null;
   color?: string | null;
   completeness?: string | null;
@@ -54,9 +60,30 @@ export interface StockItemForBarcode {
 
 interface BarcodePrintClientProps {
   initialItems: StockItemForBarcode[];
+  catalogs?: CatalogItem[];
 }
 
-export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
+const DEFAULT_CATALOGS: CatalogItem[] = [
+  { id: "cat-phone", name: "Handphone", code: "phone", hasImei: true, displayOrder: 1, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-tablet", name: "Tablet", code: "tablet", hasImei: true, displayOrder: 2, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-smartwatch", name: "SmartWatch", code: "smartwatch", hasImei: true, displayOrder: 3, description: "", isActive: true, createdAt: "", updatedAt: "" },
+  { id: "cat-accessory", name: "Aksesoris", code: "accessory", hasImei: false, displayOrder: 4, description: "", isActive: true, createdAt: "", updatedAt: "" },
+];
+
+function getCategoryIcon(code: string) {
+  const c = code.toLowerCase();
+  if (c.includes("phone") || c.includes("hp")) return <Smartphone className="h-3.5 w-3.5" />;
+  if (c.includes("tablet") || c.includes("pad")) return <Tablet className="h-3.5 w-3.5" />;
+  if (c.includes("watch")) return <Watch className="h-3.5 w-3.5" />;
+  if (c.includes("accessory") || c.includes("aksesoris")) return <Headphones className="h-3.5 w-3.5" />;
+  return <Tag className="h-3.5 w-3.5" />;
+}
+
+export function BarcodePrintClient({ initialItems, catalogs }: BarcodePrintClientProps) {
+  const activeCatalogs = useMemo(() => {
+    return catalogs && catalogs.length > 0 ? catalogs : DEFAULT_CATALOGS;
+  }, [catalogs]);
+
   const [items, setItems] = useState<StockItemForBarcode[]>(initialItems);
   const [printTab, setPrintTab] = useState<"pending" | "done">("pending");
   const [isResetting, setIsResetting] = useState(false);
@@ -72,7 +99,7 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
         .map((item) => item.id)
     )
   );
-  const [filterType, setFilterType] = useState<"all" | "phone" | "accessory">("all");
+  const [filterType, setFilterType] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [labelSize, setLabelSize] = useState<"thermal" | "sheet">("thermal");
   const [sizePreset, setSizePreset] = useState<"71x14_2col" | "50x30" | "40x30" | "40x20" | "30x20" | "custom">("71x14_2col");
@@ -155,7 +182,15 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
   };
 
   const getResmiStatusWithGrade = (item: StockItemForBarcode): string => {
-    const baseStatus = item.productType === "phone" ? getResmiInterStatus(item) : "ORIGINAL";
+    const isGadgetWithImei =
+      item.productType === "phone" ||
+      item.productType === "tablet" ||
+      item.productType === "smartwatch" ||
+      item.catalogId === "cat-phone" ||
+      item.catalogId === "cat-tablet" ||
+      item.catalogId === "cat-smartwatch" ||
+      Boolean(item.imei && item.imei !== item.sku);
+    const baseStatus = isGadgetWithImei ? getResmiInterStatus(item) : "ORIGINAL";
     const rawGrade = (item.grade || "").trim();
     if (!rawGrade || rawGrade === "-" || rawGrade.toLowerCase() === "null") {
       return baseStatus;
@@ -242,11 +277,49 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
     }
   };
 
-  // Filter items sesuai tab dan pencarian
+  // Filter items sesuai tab, catalog filter, dan pencarian
   const filteredItems = useMemo(() => {
     return tabItems.filter((item) => {
-      if (filterType === "phone" && item.productType !== "phone") return false;
-      if (filterType === "accessory" && item.productType !== "accessory") return false;
+      if (filterType !== "all") {
+        const target = filterType.toLowerCase();
+        const pType = (item.productType || "").toLowerCase();
+        const catId = (item.catalogId || "").toLowerCase();
+        const catName = (item.categoryName || "").toLowerCase();
+
+        let matches = false;
+        if (target === "phone" || target === "handphone") {
+          matches =
+            pType === "phone" ||
+            pType === "handphone" ||
+            catId === "cat-phone" ||
+            catName === "handphone";
+        } else if (target === "tablet") {
+          matches =
+            pType === "tablet" ||
+            catId === "cat-tablet" ||
+            catName === "tablet";
+        } else if (target === "smartwatch" || target === "watch") {
+          matches =
+            pType === "smartwatch" ||
+            pType === "watch" ||
+            catId === "cat-smartwatch" ||
+            catName === "smartwatch";
+        } else if (target === "accessory" || target === "aksesoris") {
+          matches =
+            pType === "accessory" ||
+            pType === "aksesoris" ||
+            catId === "cat-accessory" ||
+            catName === "aksesoris";
+        } else {
+          matches =
+            pType === target ||
+            catId === target ||
+            catId === `cat-${target}` ||
+            catName === target;
+        }
+
+        if (!matches) return false;
+      }
 
       if (!search.trim()) return true;
       const q = search.toLowerCase();
@@ -255,7 +328,8 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
         item.imei.toLowerCase().includes(q) ||
         item.sku.toLowerCase().includes(q) ||
         (item.brandName && item.brandName.toLowerCase().includes(q)) ||
-        (item.color && item.color.toLowerCase().includes(q))
+        (item.color && item.color.toLowerCase().includes(q)) ||
+        (item.categoryName && item.categoryName.toLowerCase().includes(q))
       );
     });
   }, [tabItems, filterType, search]);
@@ -1184,39 +1258,38 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
 
         {/* Filter and search bar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-muted/30 p-3 rounded-2xl border border-border">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto">
             <button
               onClick={() => setFilterType("all")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
                 filterType === "all"
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground shadow-xs"
                   : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
               Semua Stok
             </button>
-            <button
-              onClick={() => setFilterType("phone")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                filterType === "phone"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Smartphone className="h-3.5 w-3.5" />
-              <span>Handphone</span>
-            </button>
-            <button
-              onClick={() => setFilterType("accessory")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                filterType === "accessory"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Headphones className="h-3.5 w-3.5" />
-              <span>Aksesoris</span>
-            </button>
+            {activeCatalogs.map((cat) => {
+              const isSelected =
+                filterType.toLowerCase() === cat.code.toLowerCase() ||
+                (filterType === "phone" && cat.code === "handphone") ||
+                (filterType === "accessory" && cat.code === "aksesoris");
+              return (
+                <button
+                  key={cat.id || cat.code}
+                  type="button"
+                  onClick={() => setFilterType(cat.code)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
+                    isSelected
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "bg-muted text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {getCategoryIcon(cat.code)}
+                  <span>{cat.name}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2">
@@ -1358,7 +1431,13 @@ export function BarcodePrintClient({ initialItems }: BarcodePrintClientProps) {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {item.productType === "phone" && (
+                      {(item.productType === "phone" ||
+                        item.productType === "tablet" ||
+                        item.productType === "smartwatch" ||
+                        item.catalogId === "cat-phone" ||
+                        item.catalogId === "cat-tablet" ||
+                        item.catalogId === "cat-smartwatch" ||
+                        (item.imei && item.imei !== item.sku)) && (
                         <button
                           type="button"
                           onClick={(e) => {

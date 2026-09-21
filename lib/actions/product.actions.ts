@@ -277,30 +277,52 @@ export async function getProductByImei(identifier: string) {
  * Mengambil daftar stok yang berstatus tersedia untuk cetak label barcode SKU
  */
 export async function getAvailableStockForBarcodes(
-  productType?: "phone" | "accessory" | "all",
+  productType?: "phone" | "accessory" | "tablet" | "smartwatch" | "all" | string,
 ) {
   await requireAuth();
 
   const where: any = {
     isActive: true,
+    stock: { gt: 0 },
+    status: { notIn: ["sold", "menunggu_persetujuan", "ditolak"] },
   };
 
-  if (productType === "phone") {
-    where.productType = "phone";
-    where.status = { in: ["available", "retur"] };
-    where.stock = { gt: 0 };
-  } else if (productType === "accessory") {
-    where.productType = "accessory";
-    where.stock = { gt: 0 };
-  } else {
-    where.OR = [
-      {
-        productType: "phone",
-        status: { in: ["available", "retur"] },
-        stock: { gt: 0 },
-      },
-      { productType: "accessory", stock: { gt: 0 } },
-    ];
+  if (productType && productType !== "all") {
+    const pt = productType.toLowerCase();
+    if (pt === "phone" || pt === "handphone") {
+      where.OR = [
+        { productType: "phone" },
+        { productType: "handphone" },
+        { catalogId: "cat-phone" },
+        { categoryName: "Handphone" },
+      ];
+    } else if (pt === "tablet") {
+      where.OR = [
+        { productType: "tablet" },
+        { catalogId: "cat-tablet" },
+        { categoryName: "Tablet" },
+      ];
+    } else if (pt === "smartwatch" || pt === "watch") {
+      where.OR = [
+        { productType: "smartwatch" },
+        { catalogId: "cat-smartwatch" },
+        { categoryName: "SmartWatch" },
+      ];
+    } else if (pt === "accessory" || pt === "aksesoris") {
+      where.OR = [
+        { productType: "accessory" },
+        { productType: "aksesoris" },
+        { catalogId: "cat-accessory" },
+        { categoryName: "Aksesoris" },
+      ];
+    } else {
+      where.OR = [
+        { productType: productType },
+        { catalogId: productType },
+        { catalogId: `cat-${productType}` },
+        { categoryName: productType },
+      ];
+    }
   }
 
   try {
@@ -313,6 +335,8 @@ export async function getAvailableStockForBarcodes(
         sku: true,
         imei: true,
         productType: true,
+        catalogId: true,
+        categoryName: true,
         capacity: true,
         color: true,
         completeness: true,
@@ -334,7 +358,9 @@ export async function getAvailableStockForBarcodes(
       name: p.name,
       sku: p.sku,
       imei: p.imei || p.sku,
-      productType: (p.productType || "phone") as "phone" | "accessory",
+      productType: p.productType || "phone",
+      catalogId: p.catalogId || resolveCatalogId(p.catalogId, p.productType),
+      categoryName: resolveCategoryName(p.categoryName, p.productType),
       capacity: p.capacity,
       color: p.color,
       completeness: p.completeness,
