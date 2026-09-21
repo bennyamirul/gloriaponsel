@@ -79,6 +79,11 @@ export async function ensureDbSchema() {
     // 5. Kolom baru di users
     try { await db.$executeRawUnsafe("ALTER TABLE `users` ADD COLUMN `role_id` VARCHAR(191) NULL;"); } catch {}
 
+    // 6. Kolom baru di sales
+    try { await db.$executeRawUnsafe("ALTER TABLE `sales` ADD COLUMN `commission_proof_url` VARCHAR(191) NULL;"); } catch {}
+    try { await db.$executeRawUnsafe("ALTER TABLE `sales` ADD COLUMN `payment_proof_url` VARCHAR(191) NULL;"); } catch {}
+    try { await db.$executeRawUnsafe("ALTER TABLE `sales` ADD COLUMN `commission` DECIMAL(15, 2) NOT NULL DEFAULT 0.00;"); } catch {}
+
     isSynced = true;
   } catch (err) {
     console.warn("ensureDbSchema warning:", err);

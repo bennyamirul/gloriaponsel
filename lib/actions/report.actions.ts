@@ -1,6 +1,6 @@
 "use server";
 
-import { db } from "@/lib/db";
+import { db, ensureDbSchema } from "@/lib/db";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { writeFile, mkdir } from "fs/promises";
@@ -546,17 +546,21 @@ export async function updateSaleCommission(
 ) {
   try {
     await requireRole(["super_admin", "owner"]);
+    await ensureDbSchema().catch(() => {});
     const commValue = Math.max(0, Number(commission) || 0);
+
+    const updateData: { commission: number; commissionProofUrl?: string | null } = {
+      commission: commValue,
+    };
+    if (proofUrl !== undefined) {
+      updateData.commissionProofUrl = proofUrl;
+    }
 
     const sale = await db.sale.update({
       where: { id: saleId },
-      data: { commission: commValue },
-      select: { id: true, invoiceNo: true, cashierId: true },
+      data: updateData,
+      select: { id: true, invoiceNo: true, cashierId: true, commissionProofUrl: true },
     });
-
-    if (proofUrl !== undefined) {
-      await db.$executeRaw`UPDATE sales SET commission_proof_url = ${proofUrl} WHERE id = ${saleId}::uuid`;
-    }
 
     if (commValue > 0) {
       const formattedComm = new Intl.NumberFormat("id-ID", {
@@ -578,7 +582,11 @@ export async function updateSaleCommission(
     revalidatePath("/reports");
     revalidatePath("/dashboard");
     revalidatePath("/sales/history");
-    return { success: true, commission: commValue, commissionProofUrl: proofUrl };
+    return {
+      success: true,
+      commission: commValue,
+      commissionProofUrl: proofUrl !== undefined ? proofUrl : sale.commissionProofUrl,
+    };
   } catch (err: any) {
     return { error: err.message || "Gagal memperbarui komisi." };
   }

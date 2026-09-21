@@ -591,7 +591,11 @@ export async function createProduct(values: ProductFormValues) {
             },
           });
           if (targetGrade) {
-            await tx.$executeRaw`UPDATE products SET grade = ${targetGrade} WHERE id = ${newProduct.id}::uuid`;
+            await tx.$executeRawUnsafe(
+              "UPDATE `products` SET `grade` = ? WHERE `id` = ?",
+              targetGrade,
+              newProduct.id
+            );
           }
         } else {
           throw err;
@@ -862,7 +866,11 @@ export async function updateProduct(id: string, values: ProductFormValues) {
           },
         });
         if (targetGrade !== undefined) {
-          await db.$executeRaw`UPDATE products SET grade = ${targetGrade} WHERE id = ${id}::uuid`;
+          await db.$executeRawUnsafe(
+            "UPDATE `products` SET `grade` = ? WHERE `id` = ?",
+            targetGrade,
+            id
+          );
         }
       } else {
         throw err;
