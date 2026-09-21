@@ -55,6 +55,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import {
   ProductFormSheet,
   ProductItem,
@@ -125,6 +126,8 @@ export function ProductsClient({
   >("all");
   const [productTypeFilter, setProductTypeFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(
     null,
@@ -531,6 +534,24 @@ export function ProductsClient({
     sortConfig,
   ]);
 
+  // Reset ke halaman 1 saat filter atau pencarian berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    productTypeFilter,
+    statusFilter,
+    search,
+    colFilters,
+    sortConfig,
+  ]);
+
+  const totalFilteredProducts = filteredProducts.length;
+  const totalPages = Math.ceil(totalFilteredProducts / pageSize) || 1;
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, currentPage, pageSize]);
+
   const handleSort = (
     col:
       | "entryDate"
@@ -629,6 +650,7 @@ export function ProductsClient({
       status: [],
     });
     setSortConfig({ column: "entryDate", direction: "desc" });
+    setCurrentPage(1);
   };
 
   const handleOpenAdd = () => {
@@ -1134,13 +1156,13 @@ export function ProductsClient({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredProducts.map((p, idx) => (
+                  paginatedProducts.map((p, idx) => (
                     <TableRow
                       key={p.id}
                       className="hover:bg-muted/30 transition-colors text-xs"
                     >
                       <TableCell className="text-center font-mono text-muted-foreground">
-                        {idx + 1}
+                        {(currentPage - 1) * pageSize + idx + 1}
                       </TableCell>
 
                       {/* Tgl Masuk Unit */}
@@ -1421,6 +1443,17 @@ export function ProductsClient({
                 )}
               </TableBody>
             </Table>
+            <DataTablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalFilteredProducts}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+            />
           </div>
 
           {/* Mobile Card List View (Opsi 1 - Anti-tertimpa & Elegan) */}
@@ -1432,7 +1465,7 @@ export function ProductsClient({
                 <p className="text-xs">Klik &quot;Tambah Produk&quot; untuk menginput data unit baru.</p>
               </div>
             ) : (
-              filteredProducts.map((p, idx) => (
+              paginatedProducts.map((p, idx) => (
                 <div
                   key={p.id}
                   className="p-3.5 rounded-2xl border border-border bg-card shadow-xs space-y-2.5"
@@ -1440,7 +1473,9 @@ export function ProductsClient({
                   {/* Header: No Urut, Tanggal Masuk, & Badge Status */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
-                      <span className="font-mono font-bold text-foreground shrink-0">#{idx + 1}</span>
+                      <span className="font-mono font-bold text-foreground shrink-0">
+                        #{(currentPage - 1) * pageSize + idx + 1}
+                      </span>
                       <span className="shrink-0">•</span>
                       <div className="flex items-center gap-1 font-medium truncate">
                         <Calendar className="h-3 w-3 text-primary/70 shrink-0" />
@@ -1679,6 +1714,24 @@ export function ProductsClient({
               ))
             )}
           </div>
+
+          {/* Mobile Pagination Control */}
+          {totalFilteredProducts > 0 && (
+            <div className="md:hidden mt-3">
+              <DataTablePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalFilteredProducts}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                className="rounded-2xl border border-border"
+              />
+            </div>
+          )}
         </div>
 
       {/* Kolom tabel terpadu di atas dipakai untuk semua jenis produk. */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { formatRupiah } from "@/lib/utils";
 import { exportToExcel, triggerPrint } from "@/lib/export-utils";
 import {
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table } from "@/components/ui/table";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -90,26 +91,41 @@ interface SalesReportViewProps {
 
 export function SalesReportView({ data }: SalesReportViewProps) {
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [selectedSale, setSelectedSale] = useState<any | null>(null);
 
   const { summary, categoryBreakdown, paymentBreakdown, sales } = data;
 
-  const filteredSales = sales.filter((s) => {
-    const q = search.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      s.invoiceNo.toLowerCase().includes(q) ||
-      s.customerName.toLowerCase().includes(q) ||
-      (s.customerPhone && s.customerPhone.toLowerCase().includes(q)) ||
-      s.cashierName.toLowerCase().includes(q) ||
-      (s.additionalFeeNote && s.additionalFeeNote.toLowerCase().includes(q)) ||
-      s.items.some(
-        (it) =>
-          it.name.toLowerCase().includes(q) ||
-          (it.color && it.color.toLowerCase().includes(q))
-      )
-    );
-  });
+  const filteredSales = useMemo(() => {
+    return sales.filter((s) => {
+      const q = search.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        s.invoiceNo.toLowerCase().includes(q) ||
+        s.customerName.toLowerCase().includes(q) ||
+        (s.customerPhone && s.customerPhone.toLowerCase().includes(q)) ||
+        s.cashierName.toLowerCase().includes(q) ||
+        (s.additionalFeeNote && s.additionalFeeNote.toLowerCase().includes(q)) ||
+        s.items.some(
+          (it) =>
+            it.name.toLowerCase().includes(q) ||
+            (it.color && it.color.toLowerCase().includes(q))
+        )
+      );
+    });
+  }, [sales, search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalFilteredSales = filteredSales.length;
+  const totalPages = Math.ceil(totalFilteredSales / pageSize) || 1;
+  const paginatedSales = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredSales.slice(start, start + pageSize);
+  }, [filteredSales, currentPage, pageSize]);
 
   const handleExportExcel = () => {
     const headers = [
@@ -369,7 +385,7 @@ export function SalesReportView({ data }: SalesReportViewProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {filteredSales.map((sale) => (
+                    {paginatedSales.map((sale) => (
                       <tr key={sale.id} className="hover:bg-muted/40 transition-colors">
                         {/* 1. Tanggal */}
                         <td className="py-3 text-muted-foreground whitespace-nowrap">
@@ -467,7 +483,7 @@ export function SalesReportView({ data }: SalesReportViewProps) {
 
               {/* Mobile Card List View (Clean & Anti-Collision) */}
               <div className="grid grid-cols-1 gap-3 lg:hidden mt-3">
-                {filteredSales.map((sale) => (
+                {paginatedSales.map((sale) => (
                   <div
                     key={sale.id}
                     onClick={() => setSelectedSale(sale)}
@@ -572,6 +588,19 @@ export function SalesReportView({ data }: SalesReportViewProps) {
                   </div>
                 ))}
               </div>
+
+              <DataTablePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalFilteredSales}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                className="mt-4 rounded-xl border border-border"
+              />
             </>
           )}
         </CardContent>

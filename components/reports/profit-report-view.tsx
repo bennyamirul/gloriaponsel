@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo, useEffect } from "react";
 import { formatRupiah } from "@/lib/utils";
 import { exportToExcel, triggerPrint } from "@/lib/export-utils";
 import {
@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table } from "@/components/ui/table";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -202,23 +203,39 @@ export function ProfitReportView({ data, onCommissionUpdated }: ProfitReportView
     });
   };
 
-  const filteredTransactions = transactions.filter((t) => {
-    const q = search.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      t.invoiceNo.toLowerCase().includes(q) ||
-      t.customerName.toLowerCase().includes(q) ||
-      (t.customerPhone && t.customerPhone.toLowerCase().includes(q)) ||
-      t.cashierName.toLowerCase().includes(q) ||
-      (t.additionalFeeNote && t.additionalFeeNote.toLowerCase().includes(q)) ||
-      (t.items &&
-        t.items.some(
-          (it) =>
-            it.name.toLowerCase().includes(q) ||
-            (it.color && it.color.toLowerCase().includes(q))
-        ))
-    );
-  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      const q = search.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        t.invoiceNo.toLowerCase().includes(q) ||
+        t.customerName.toLowerCase().includes(q) ||
+        (t.customerPhone && t.customerPhone.toLowerCase().includes(q)) ||
+        t.cashierName.toLowerCase().includes(q) ||
+        (t.additionalFeeNote && t.additionalFeeNote.toLowerCase().includes(q)) ||
+        (t.items &&
+          t.items.some(
+            (it) =>
+              it.name.toLowerCase().includes(q) ||
+              (it.color && it.color.toLowerCase().includes(q))
+          ))
+      );
+    });
+  }, [transactions, search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalFilteredTransactions = filteredTransactions.length;
+  const totalPages = Math.ceil(totalFilteredTransactions / pageSize) || 1;
+  const paginatedTransactions = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredTransactions.slice(start, start + pageSize);
+  }, [filteredTransactions, currentPage, pageSize]);
 
   const excelHeaders = [
     "Tanggal",
@@ -702,7 +719,7 @@ export function ProfitReportView({ data, onCommissionUpdated }: ProfitReportView
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {filteredTransactions.map((t) => (
+                      {paginatedTransactions.map((t) => (
                         <tr key={t.id} className="hover:bg-muted/40 transition-colors">
                           <td className="py-3 pr-2 text-muted-foreground whitespace-nowrap">
                             {new Date(t.date).toLocaleDateString("id-ID", {
@@ -819,7 +836,7 @@ export function ProfitReportView({ data, onCommissionUpdated }: ProfitReportView
 
                 {/* Mobile Card List View (Clean & Anti-Collision) */}
                 <div className="grid grid-cols-1 gap-3 md:hidden mt-3">
-                  {filteredTransactions.map((t) => (
+                  {paginatedTransactions.map((t) => (
                     <div
                       key={t.id}
                       className="p-3.5 rounded-2xl border border-border bg-card shadow-xs space-y-3 hover:border-slate-300 dark:hover:border-slate-700 transition"
@@ -946,6 +963,19 @@ export function ProfitReportView({ data, onCommissionUpdated }: ProfitReportView
                     </div>
                   ))}
                 </div>
+
+                <DataTablePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalFilteredTransactions}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPage}
+                  onPageSizeChange={(newSize) => {
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
+                  className="mt-4 rounded-xl border border-border"
+                />
               </>
             )}
           </CardContent>

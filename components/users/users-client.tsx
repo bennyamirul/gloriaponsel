@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Users,
   UserPlus,
@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import {
   Dialog,
   DialogContent,
@@ -150,13 +151,28 @@ export function UsersClient({ initialUsers, roles = [], currentUserId }: UsersCl
   const [selectedRoleIdTarget, setSelectedRoleIdTarget] = useState<string>("role-admin-kasir");
   const [resetPasswordInput, setResetPasswordInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  const filteredUsers = users.filter(
-    (u) =>
-      (u.username && u.username.toLowerCase().includes(search.toLowerCase())) ||
-      (u.name && u.name.toLowerCase().includes(search.toLowerCase())) ||
-      (u.email && u.email.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredUsers = useMemo(() => {
+    return users.filter(
+      (u) =>
+        (u.username && u.username.toLowerCase().includes(search.toLowerCase())) ||
+        (u.name && u.name.toLowerCase().includes(search.toLowerCase())) ||
+        (u.email && u.email.toLowerCase().includes(search.toLowerCase()))
+    );
+  }, [users, search]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  const totalFilteredUsers = filteredUsers.length;
+  const totalPages = Math.ceil(totalFilteredUsers / pageSize) || 1;
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredUsers.slice(start, start + pageSize);
+  }, [filteredUsers, currentPage, pageSize]);
 
   const getRoleBadge = (role: string, roleName?: string | null) => {
     if (role === "owner" || role === "super_admin") {
@@ -385,7 +401,7 @@ export function UsersClient({ initialUsers, roles = [], currentUserId }: UsersCl
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {filteredUsers.map((u) => (
+                    {paginatedUsers.map((u) => (
                       <tr key={u.id} className="hover:bg-muted/30 transition-colors">
                         <td className="py-3 font-semibold text-foreground">
                           <div className="flex items-center gap-2">
@@ -506,7 +522,7 @@ export function UsersClient({ initialUsers, roles = [], currentUserId }: UsersCl
 
               {/* Mobile Card List View */}
               <div className="grid grid-cols-1 gap-3 md:hidden mt-4">
-                {filteredUsers.map((u) => (
+                {paginatedUsers.map((u) => (
                   <div
                     key={u.id}
                     className="p-3.5 rounded-xl border border-border bg-slate-50/50 space-y-2.5"
@@ -602,6 +618,19 @@ export function UsersClient({ initialUsers, roles = [], currentUserId }: UsersCl
                   </div>
                 ))}
               </div>
+
+              <DataTablePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalFilteredUsers}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={(newSize) => {
+                  setPageSize(newSize);
+                  setCurrentPage(1);
+                }}
+                className="mt-4 rounded-xl border border-border"
+              />
             </>
           )}
         </CardContent>

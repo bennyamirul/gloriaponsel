@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -50,6 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import {
   Dialog,
   DialogContent,
@@ -469,6 +470,8 @@ export function SalesInvoicePrintClient({
   const isStaffMarketing = currentUserRole === "admin_kasir";
 
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [dateFilter, setDateFilter] = useState<string>("");
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [selectedSale, setSelectedSale] = useState<PrintableSale | null>(null);
@@ -1010,6 +1013,24 @@ export function SalesInvoicePrintClient({
     sortConfig,
     commissionOverrides,
   ]);
+ 
+  // Reset ke halaman 1 saat filter atau pencarian berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    search,
+    dateFilter,
+    paymentFilter,
+    colFilters,
+    sortConfig,
+  ]);
+
+  const totalFilteredSales = filteredSales.length;
+  const totalPages = Math.ceil(totalFilteredSales / pageSize) || 1;
+  const paginatedSales = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredSales.slice(start, start + pageSize);
+  }, [filteredSales, currentPage, pageSize]);
 
   // Statistics
   const totalInvoices = filteredSales.length;
@@ -1530,6 +1551,7 @@ export function SalesInvoicePrintClient({
                   status: [],
                 });
                 setSortConfig({ column: "createdAt", direction: "desc" });
+                setCurrentPage(1);
               }}
               className="h-10 text-xs text-muted-foreground hover:text-foreground"
             >
@@ -1789,7 +1811,7 @@ export function SalesInvoicePrintClient({
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredSales.map((sale) => (
+                paginatedSales.map((sale) => (
                   <TableRow
                     key={sale.id}
                     className="hover:bg-muted/40 transition"
@@ -2180,6 +2202,17 @@ export function SalesInvoicePrintClient({
             </TableBody>
           </Table>
         </div>
+        <DataTablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalFilteredSales}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(newSize) => {
+            setPageSize(newSize);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
       {/* MODAL PREVIEW & CETAK INVOICE */}
