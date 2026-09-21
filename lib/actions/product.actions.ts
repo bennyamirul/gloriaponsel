@@ -945,6 +945,22 @@ export async function updateProductStatus(
 
     const statusLabel = normalizedStatus === "available" ? "Ready" : "Terjual";
 
+    if (normalizedStatus === "sold") {
+      const priceText = updateData.sellingPrice || product.sellingPrice
+        ? ` senilai ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(updateData.sellingPrice || product.sellingPrice))}`
+        : "";
+
+      await createNotification({
+        targetRoles: ["owner", "admin_kasir", "staff_gudang", "staff_keuangan"],
+        title: "Barang Terjual",
+        message: `Produk "${product.name}" (${product.sku || product.imei || "Unit"}) telah ditandai sebagai Terjual${priceText}.`,
+        type: "transaction_out",
+        link: "/products",
+      }).catch((err) => {
+        console.warn("createNotification background warning:", err);
+      });
+    }
+
     return {
       success: true,
       message: `Status produk "${product.name}" berhasil diubah menjadi "${statusLabel}".`,

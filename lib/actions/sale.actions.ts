@@ -77,7 +77,7 @@ export async function createSale(values: CreateSaleFormValues) {
   } = validated.data;
 
   try {
-    const result = await db.$transaction(async (tx) => {
+    const { sale: result, productSnapshots } = await db.$transaction(async (tx) => {
       // 1. Validasi ketersediaan stok fisik di DB untuk setiap produk
       let calculatedSubtotal = 0;
       const productSnapshots: {
@@ -204,7 +204,7 @@ export async function createSale(values: CreateSaleFormValues) {
         });
       }
 
-      return sale;
+      return { sale, productSnapshots };
     });
 
     revalidatePath("/sales");
@@ -218,16 +218,19 @@ export async function createSale(values: CreateSaleFormValues) {
       maximumFractionDigits: 0,
     }).format(Number(result.total));
 
-    if (user.role !== "owner" && user.role !== "super_admin") {
-      await createNotification({
-        targetRole: "owner",
-        title: "Transaksi Keluar Baru",
-        message: `Transaksi ${result.invoiceNo} senilai ${formattedTotal} berhasil diselesaikan oleh ${user.name || "Kasir"}.`,
-        type: "transaction_out",
-        link: "/sales/history",
-        excludeUserId: user.id,
-      });
-    }
+    const itemSummary = productSnapshots
+      .map((p) => `${p.product?.name || "Produk"}${p.qty > 1 ? ` (x${p.qty})` : ""}`)
+      .join(", ");
+
+    await createNotification({
+      targetRoles: ["owner", "admin_kasir", "staff_gudang", "staff_keuangan"],
+      title: "Barang Terjual / Transaksi Kasir",
+      message: `Barang terjual: ${itemSummary || "Unit produk"} (No. Faktur: ${result.invoiceNo}) senilai ${formattedTotal} oleh ${user.name || "Kasir"}.`,
+      type: "transaction_out",
+      link: "/sales/history",
+    }).catch((err) => {
+      console.warn("createNotification sale error:", err);
+    });
 
     return {
       success: true,

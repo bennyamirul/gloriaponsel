@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { Role } from "@prisma/client";
-import { sendPushToUsers, sendPushToRole } from "@/lib/push-notification";
+import { sendPushToUsers, sendPushToRole, sendPushToRoles } from "@/lib/push-notification";
 
 export type NotificationType =
   | "stock_approval"
@@ -15,7 +15,8 @@ export type NotificationType =
 
 export interface CreateNotificationParams {
   userId?: string | null;
-  targetRole?: "owner" | "admin_kasir" | "staff_gudang";
+  targetRole?: "owner" | "admin_kasir" | "staff_gudang" | "staff_keuangan" | Role | string;
+  targetRoles?: ("owner" | "admin_kasir" | "staff_gudang" | "staff_keuangan" | Role | string)[];
   title: string;
   message: string;
   type: NotificationType | string;
@@ -25,13 +26,13 @@ export interface CreateNotificationParams {
 
 /**
  * Membuat notifikasi baru.
- * Jika `targetRole` disertakan, notifikasi dibuat untuk seluruh user aktif yang memiliki role tersebut.
+ * Jika `targetRoles` atau `targetRole` disertakan, notifikasi dibuat untuk seluruh user aktif yang memiliki role tersebut.
  * Jika `userId` disertakan, dibuat langsung untuk user terkait.
  * Jika `excludeUserId` disertakan, user ID tersebut tidak akan menerima notifikasi.
  */
 export async function createNotification(params: CreateNotificationParams) {
   try {
-    const { userId, targetRole, title, message, type, link, excludeUserId } = params;
+    const { userId, targetRole, targetRoles, title, message, type, link, excludeUserId } = params;
 
     const userIdsToNotify = new Set<string>();
 
@@ -39,25 +40,40 @@ export async function createNotification(params: CreateNotificationParams) {
       userIdsToNotify.add(userId);
     }
 
-    if (targetRole) {
-      let roleFilter: Role[] = [];
-      if (targetRole === "owner") {
-        roleFilter = [Role.owner, Role.super_admin];
-      } else if (targetRole === "admin_kasir") {
-        roleFilter = [Role.admin_kasir, Role.admin];
-      } else if (targetRole === "staff_gudang") {
-        roleFilter = [Role.staff_gudang];
+    const rolesToQuery: string[] = [];
+    if (targetRole) rolesToQuery.push(String(targetRole));
+    if (targetRoles && Array.isArray(targetRoles)) {
+      targetRoles.forEach((r) => rolesToQuery.push(String(r)));
+    }
+
+    if (rolesToQuery.length > 0) {
+      const roleFilter: Role[] = [];
+      for (const r of rolesToQuery) {
+        if (r === "owner" || r === "super_admin") {
+          roleFilter.push(Role.owner, Role.super_admin);
+        } else if (r === "admin_kasir" || r === "admin") {
+          roleFilter.push(Role.admin_kasir, Role.admin);
+        } else if (r === "staff_gudang") {
+          roleFilter.push(Role.staff_gudang);
+        } else if (r === "staff_keuangan") {
+          roleFilter.push(Role.staff_keuangan);
+        } else if (Object.values(Role).includes(r as Role)) {
+          roleFilter.push(r as Role);
+        }
       }
 
-      const users = await db.user.findMany({
-        where: {
-          role: { in: roleFilter },
-          isActive: true,
-        },
-        select: { id: true },
-      });
+      const uniqueRoleFilter = Array.from(new Set(roleFilter));
+      if (uniqueRoleFilter.length > 0) {
+        const users = await db.user.findMany({
+          where: {
+            role: { in: uniqueRoleFilter },
+            isActive: true,
+          },
+          select: { id: true },
+        });
 
-      users.forEach((u) => userIdsToNotify.add(u.id));
+        users.forEach((u) => userIdsToNotify.add(u.id));
+      }
     }
 
     if (excludeUserId) {
@@ -65,24 +81,43 @@ export async function createNotification(params: CreateNotificationParams) {
     }
 
     if (userIdsToNotify.size === 0 && !userId) {
-      // Jika tidak ada user spesifik, simpan notifikasi umum dengan targetRole
-      await db.notification.create({
-        data: {
+      // Jika tidak ada user spesifik, simpan notifikasi umum dengan targetRole / targetRoles
+      if (targetRoles && targetRoles.length > 0) {
+        const fallbackRecords = targetRoles.map((r) => ({
           title,
           message,
           type,
           link: link || null,
-          targetRole: targetRole ? (targetRole as Role) : null,
-        },
-      });
-
-      if (targetRole) {
-        sendPushToRole(targetRole, {
+          targetRole: (r as Role),
+        }));
+        await db.notification.createMany({
+          data: fallbackRecords,
+        });
+        sendPushToRoles(targetRoles, {
           title,
           body: message,
           url: link || "/dashboard",
           tag: `notif-${type}-${Date.now()}`,
         }).catch(() => {});
+      } else {
+        await db.notification.create({
+          data: {
+            title,
+            message,
+            type,
+            link: link || null,
+            targetRole: targetRole ? (targetRole as Role) : null,
+          },
+        });
+
+        if (targetRole) {
+          sendPushToRole(targetRole, {
+            title,
+            body: message,
+            url: link || "/dashboard",
+            tag: `notif-${type}-${Date.now()}`,
+          }).catch(() => {});
+        }
       }
 
       return { success: true };
@@ -136,6 +171,8 @@ export async function getNotifications(limit = 20) {
       matchingRole = [Role.admin_kasir, Role.admin];
     } else if (user.role === "staff_gudang") {
       matchingRole = [Role.staff_gudang];
+    } else if (user.role === "staff_keuangan") {
+      matchingRole = [Role.staff_keuangan];
     }
 
     const where = {
@@ -216,6 +253,8 @@ export async function markAllNotificationsAsRead() {
       matchingRole = [Role.admin_kasir, Role.admin];
     } else if (user.role === "staff_gudang") {
       matchingRole = [Role.staff_gudang];
+    } else if (user.role === "staff_keuangan") {
+      matchingRole = [Role.staff_keuangan];
     }
 
     await db.notification.updateMany({
@@ -274,6 +313,8 @@ export async function clearAllNotifications() {
       matchingRole = [Role.admin_kasir, Role.admin];
     } else if (user.role === "staff_gudang") {
       matchingRole = [Role.staff_gudang];
+    } else if (user.role === "staff_keuangan") {
+      matchingRole = [Role.staff_keuangan];
     }
 
     await db.notification.deleteMany({

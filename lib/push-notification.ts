@@ -100,7 +100,7 @@ export async function sendPushToUsers(
  * Mengirim Push Notification ke seluruh user aktif yang memiliki role tertentu.
  */
 export async function sendPushToRole(
-  targetRole: "owner" | "admin_kasir" | "staff_gudang" | Role,
+  targetRole: "owner" | "admin_kasir" | "staff_gudang" | "staff_keuangan" | Role | string,
   payload: PushPayload,
   excludeUserId?: string | null
 ): Promise<{ sentCount: number; failedCount: number }> {
@@ -113,6 +113,8 @@ export async function sendPushToRole(
       roleFilter = [Role.admin_kasir, Role.admin];
     } else if (r === "staff_gudang") {
       roleFilter = [Role.staff_gudang];
+    } else if (r === "staff_keuangan") {
+      roleFilter = [Role.staff_keuangan];
     } else {
       roleFilter = [targetRole as Role];
     }
@@ -132,6 +134,53 @@ export async function sendPushToRole(
     return await sendPushToUsers(userIds, payload);
   } catch (err) {
     console.error("sendPushToRole error:", err);
+    return { sentCount: 0, failedCount: 0 };
+  }
+}
+
+/**
+ * Mengirim Push Notification ke seluruh user aktif pada beberapa role sekaligus.
+ */
+export async function sendPushToRoles(
+  targetRoles: ("owner" | "admin_kasir" | "staff_gudang" | "staff_keuangan" | Role | string)[],
+  payload: PushPayload,
+  excludeUserId?: string | null
+): Promise<{ sentCount: number; failedCount: number }> {
+  try {
+    const roleFilters: Role[] = [];
+    for (const targetRole of targetRoles) {
+      const r = String(targetRole);
+      if (r === "owner" || r === "super_admin") {
+        roleFilters.push(Role.owner, Role.super_admin);
+      } else if (r === "admin_kasir" || r === "admin") {
+        roleFilters.push(Role.admin_kasir, Role.admin);
+      } else if (r === "staff_gudang") {
+        roleFilters.push(Role.staff_gudang);
+      } else if (r === "staff_keuangan") {
+        roleFilters.push(Role.staff_keuangan);
+      } else if (Object.values(Role).includes(targetRole as Role)) {
+        roleFilters.push(targetRole as Role);
+      }
+    }
+
+    const uniqueRoles = Array.from(new Set(roleFilters));
+    if (uniqueRoles.length === 0) return { sentCount: 0, failedCount: 0 };
+
+    const users = await db.user.findMany({
+      where: {
+        role: { in: uniqueRoles },
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    const userIds = users
+      .map((u) => u.id)
+      .filter((id) => !excludeUserId || id !== excludeUserId);
+
+    return await sendPushToUsers(userIds, payload);
+  } catch (err) {
+    console.error("sendPushToRoles error:", err);
     return { sentCount: 0, failedCount: 0 };
   }
 }
