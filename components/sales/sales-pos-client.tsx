@@ -66,6 +66,7 @@ import {
 import {
   formatWhatsAppProofCaption,
 } from "@/lib/utils/payment-proof-composer";
+import { adjustPosReceiptItems } from "@/lib/utils/receipt-utils";
 
 export interface PosProductItem {
   id: string;
@@ -190,6 +191,13 @@ export function SalesPosClient({
     createdAt?: string;
     paymentProofUrl?: string | null;
   } | null>(null);
+
+  // Penyesuaian biaya tambahan agar melebur ke harga jual pada struk POS
+  const { adjustedItems: posAdjustedItems, adjustedSubtotal: posAdjustedSubtotal } =
+    useMemo(() => {
+      if (!completedSale) return { adjustedItems: [], adjustedSubtotal: 0 };
+      return adjustPosReceiptItems(completedSale.items, completedSale.additionalFee);
+    }, [completedSale]);
 
   // State upload bukti pembayaran di POS
   const [isUploadingPosProof, setIsUploadingPosProof] = useState(false);
@@ -2095,7 +2103,7 @@ export function SalesPosClient({
 
                   {/* Rincian Item Thermal (Format Identik Preview Pengaturan Toko) */}
                   <div className="py-2 border-b border-dashed border-slate-300 space-y-1.5">
-                    {completedSale.items.map((item, idx) => (
+                    {posAdjustedItems.map((item, idx) => (
                       <div
                         key={idx}
                         className="space-y-0.5"
@@ -2112,7 +2120,7 @@ export function SalesPosClient({
                                 </span>
                               </td>
                               <td className="align-top text-right p-0 pl-1 whitespace-nowrap font-bold text-slate-900 dark:text-zinc-100 text-[8.5px]">
-                                {formatRupiah(item.product.sellingPrice * item.qty)}
+                                {formatRupiah(item.subtotal)}
                               </td>
                             </tr>
                           </tbody>
@@ -2130,7 +2138,7 @@ export function SalesPosClient({
                           </div>
                         )}
                         <div className="text-[8.5px] text-slate-600 dark:text-zinc-400 leading-tight pt-0.5">
-                          {item.qty} x {formatRupiah(item.product.sellingPrice)}
+                          {item.qty} x {formatRupiah(item.unitPrice)}
                         </div>
                       </div>
                     ))}
@@ -2144,7 +2152,7 @@ export function SalesPosClient({
                           <>
                             <tr>
                               <td className="text-left text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">Subtotal</td>
-                              <td className="text-right text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">{formatRupiah(completedSale.subtotal)}</td>
+                              <td className="text-right text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">{formatRupiah(posAdjustedSubtotal)}</td>
                             </tr>
                             <tr>
                               <td className="text-left text-rose-600 p-0 pb-0.5 whitespace-nowrap">Diskon</td>
@@ -2152,12 +2160,6 @@ export function SalesPosClient({
                             </tr>
                           </>
                         )}
-                        {completedSale.additionalFee && completedSale.additionalFee > 0 ? (
-                          <tr>
-                            <td className="text-left text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">Biaya Lain</td>
-                            <td className="text-right text-slate-600 dark:text-zinc-400 p-0 pb-0.5 whitespace-nowrap">+{formatRupiah(completedSale.additionalFee)}</td>
-                          </tr>
-                        ) : null}
                         <tr>
                           <td className="text-left font-bold text-[9.5px] pt-1 pb-0.5 text-slate-900 dark:text-zinc-100 whitespace-nowrap">TOTAL</td>
                           <td className="text-right font-bold text-[10.5px] tracking-tight pt-1 pb-0.5 text-slate-900 dark:text-zinc-100 whitespace-nowrap">{formatRupiah(completedSale.total)}</td>
@@ -2283,7 +2285,7 @@ export function SalesPosClient({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {completedSale.items.map((item, idx) => (
+                        {posAdjustedItems.map((item, idx) => (
                           <tr key={idx} className="hover:bg-slate-50/50">
                             <td className="py-2.5 px-3 text-center text-slate-500 font-mono">
                               {idx + 1}
@@ -2308,12 +2310,10 @@ export function SalesPosClient({
                               {item.qty}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono text-slate-700">
-                              {formatRupiah(item.product.sellingPrice)}
+                              {formatRupiah(item.unitPrice)}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
-                              {formatRupiah(
-                                item.product.sellingPrice * item.qty,
-                              )}
+                              {formatRupiah(item.subtotal)}
                             </td>
                           </tr>
                         ))}
@@ -2349,7 +2349,7 @@ export function SalesPosClient({
                       <div className="flex justify-between text-slate-600">
                         <span>Subtotal Barang:</span>
                         <span className="font-mono">
-                          {formatRupiah(completedSale.subtotal)}
+                          {formatRupiah(posAdjustedSubtotal)}
                         </span>
                       </div>
                       {completedSale.discount > 0 && (
@@ -2360,15 +2360,6 @@ export function SalesPosClient({
                           </span>
                         </div>
                       )}
-                      {completedSale.additionalFee &&
-                      completedSale.additionalFee > 0 ? (
-                        <div className="flex justify-between text-[#055B5A] font-semibold">
-                          <span>Biaya Tambahan:</span>
-                          <span className="font-mono">
-                            +{formatRupiah(completedSale.additionalFee)}
-                          </span>
-                        </div>
-                      ) : null}
                       <div className="flex justify-between items-center pt-2 border-t-2 border-slate-300 font-bold text-sm text-slate-900">
                         <span>TOTAL AKHIR:</span>
                         <span className="font-mono text-base text-[#055B5A]">

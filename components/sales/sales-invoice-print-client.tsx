@@ -89,6 +89,7 @@ import {
   CommissionEditSaleInfo,
 } from "@/components/sales/commission-edit-dialog";
 import { PaymentProofModal } from "@/components/sales/payment-proof-modal";
+import { adjustReceiptItems } from "@/lib/utils/receipt-utils";
 
 export interface PrintableSaleItem {
   id: string;
@@ -592,6 +593,23 @@ export function SalesInvoicePrintClient({
   const [activeCaptureSale, setActiveCaptureSale] = useState<PrintableSale | null>(null);
   const [isDownloadingJpg, setIsDownloadingJpg] = useState(false);
   const [isSendingWaImage, setIsSendingWaImage] = useState(false);
+
+  // Penyesuaian biaya tambahan agar melebur ke harga jual pada struk/faktur modal cetak
+  const { adjustedItems: modalAdjustedItems, adjustedSubtotal: modalAdjustedSubtotal } =
+    useMemo(() => {
+      if (!selectedSale) return { adjustedItems: [], adjustedSubtotal: 0 };
+      return adjustReceiptItems(selectedSale.items, selectedSale.additionalFee);
+    }, [selectedSale]);
+
+  // Penyesuaian biaya tambahan untuk container cetak offscreen (JPG & WhatsApp)
+  const captureSale = activeCaptureSale || selectedSale;
+  const {
+    adjustedItems: captureAdjustedItems,
+    adjustedSubtotal: captureAdjustedSubtotal,
+  } = useMemo(() => {
+    if (!captureSale) return { adjustedItems: [], adjustedSubtotal: 0 };
+    return adjustReceiptItems(captureSale.items, captureSale.additionalFee);
+  }, [captureSale]);
 
   const toggleExpandSale = (saleId: string) => {
     setExpandedSaleIds((prev) => {
@@ -2337,7 +2355,7 @@ export function SalesInvoicePrintClient({
 
                   {/* Rincian Item Thermal (Format Identik Preview Pengaturan Toko) */}
                   <div className="py-2 border-b border-dashed border-slate-300 space-y-1.5">
-                    {selectedSale.items.map((item, idx) => (
+                    {modalAdjustedItems.map((item, idx) => (
                       <div
                         key={idx}
                         className={`space-y-0.5 ${item.isReturned ? "opacity-60" : ""}`}
@@ -2382,7 +2400,7 @@ export function SalesInvoicePrintClient({
                       <>
                         <div className="flex justify-between">
                           <span>Subtotal</span>
-                          <span>{formatRupiah(selectedSale.subtotal)}</span>
+                          <span>{formatRupiah(modalAdjustedSubtotal)}</span>
                         </div>
                         <div className="flex justify-between text-rose-600">
                           <span>Diskon</span>
@@ -2390,12 +2408,6 @@ export function SalesInvoicePrintClient({
                         </div>
                       </>
                     )}
-                    {selectedSale.additionalFee && selectedSale.additionalFee > 0 ? (
-                      <div className="flex justify-between">
-                        <span>Biaya Lain</span>
-                        <span>+{formatRupiah(selectedSale.additionalFee)}</span>
-                      </div>
-                    ) : null}
                     <div className="flex justify-between font-bold text-xs pt-1 text-slate-900 dark:text-zinc-100">
                       <span>TOTAL</span>
                       <span>{formatRupiah(selectedSale.total)}</span>
@@ -2522,7 +2534,7 @@ export function SalesInvoicePrintClient({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {selectedSale.items.map((item, idx) => (
+                        {modalAdjustedItems.map((item, idx) => (
                           <tr
                             key={idx}
                             className={`hover:bg-slate-50/50 ${item.isReturned ? "bg-rose-50/40 opacity-70" : ""}`}
@@ -2591,7 +2603,7 @@ export function SalesInvoicePrintClient({
                       <div className="flex justify-between text-slate-600">
                         <span>Subtotal Barang:</span>
                         <span className="font-mono">
-                          {formatRupiah(selectedSale.subtotal)}
+                          {formatRupiah(modalAdjustedSubtotal)}
                         </span>
                       </div>
                       {selectedSale.discount > 0 && (
@@ -2602,15 +2614,6 @@ export function SalesInvoicePrintClient({
                           </span>
                         </div>
                       )}
-                      {selectedSale.additionalFee &&
-                      selectedSale.additionalFee > 0 ? (
-                        <div className="flex justify-between text-[#055B5A] font-semibold">
-                          <span>Biaya Tambahan:</span>
-                          <span className="font-mono">
-                            +{formatRupiah(selectedSale.additionalFee)}
-                          </span>
-                        </div>
-                      ) : null}
                       <div className="flex justify-between items-center pt-2 border-t-2 border-slate-300 font-bold text-sm text-slate-900">
                         <span>TOTAL AKHIR:</span>
                         <span className="font-mono text-base text-[#055B5A]">
@@ -3506,7 +3509,7 @@ export function SalesInvoicePrintClient({
 
               {/* Rincian Item Thermal (Format Identik Preview Pengaturan Toko) */}
               <div className="py-2 border-b border-dashed border-slate-300 space-y-1.5">
-                {(activeCaptureSale || selectedSale)!.items.map((item, idx) => (
+                {captureAdjustedItems.map((item, idx) => (
                   <div
                     key={idx}
                     className={`space-y-0.5 ${item.isReturned ? "opacity-60" : ""}`}
@@ -3549,7 +3552,7 @@ export function SalesInvoicePrintClient({
                   <>
                     <div className="flex justify-between">
                       <span>Subtotal</span>
-                      <span>{formatRupiah((activeCaptureSale || selectedSale)!.subtotal)}</span>
+                      <span>{formatRupiah(captureAdjustedSubtotal)}</span>
                     </div>
                     <div className="flex justify-between text-rose-600">
                       <span>Diskon</span>
@@ -3557,12 +3560,6 @@ export function SalesInvoicePrintClient({
                     </div>
                   </>
                 )}
-                {(activeCaptureSale || selectedSale)!.additionalFee && (activeCaptureSale || selectedSale)!.additionalFee! > 0 ? (
-                  <div className="flex justify-between">
-                    <span>Biaya Lain</span>
-                    <span>+{formatRupiah((activeCaptureSale || selectedSale)!.additionalFee!)}</span>
-                  </div>
-                ) : null}
                 <div className="flex justify-between font-bold text-xs pt-1 text-slate-900">
                   <span>TOTAL</span>
                   <span>{formatRupiah((activeCaptureSale || selectedSale)!.total)}</span>
